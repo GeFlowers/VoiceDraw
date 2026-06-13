@@ -2,7 +2,6 @@
 .env.local
 __pycache__/
 *.py[cod]
-.ruff_cache/
 .mypy_cache/
 dist/
 build/
