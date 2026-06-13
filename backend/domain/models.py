@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
-from typing import Literal
-
-from pydantic import BaseModel, Field, field_validator
+from typing import Any, Literal
 
 
 class OperationType(str, Enum):
@@ -43,64 +43,167 @@ class PlanSource(str, Enum):
 TargetSelector = Literal["selected", "last", "all", "none"]
 
 
-class DrawingStyle(BaseModel):
-    stroke: str | None = Field(default="#1f2937", description="Hex stroke color.")
-    fill: str | None = Field(default=None, description="Hex fill color or null for transparent.")
-    line_width: float = Field(default=4.0, ge=0.5, le=48)
-    opacity: float = Field(default=1.0, ge=0.05, le=1.0)
+class ModelMixin:
+    def model_copy(self, *, update: dict[str, Any] | None = None) -> Any:
+        copied = deepcopy(self)
+        for key, value in (update or {}).items():
+            setattr(copied, key, value)
+        return copied
+
+    def model_dump(self) -> dict[str, Any]:
+        return _to_jsonable(self)
+
+
+def _enum_value(enum_type: type[Enum], value: Any) -> Any:
+    if value is None or isinstance(value, enum_type):
+        return value
+    return enum_type(value)
+
+
+def _clamp(value: float, min_value: float, max_value: float) -> float:
+    return max(min_value, min(max_value, value))
+
+
+def _to_jsonable(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value):
+        return {item.name: _to_jsonable(getattr(value, item.name)) for item in fields(value)}
+    if isinstance(value, list):
+        return [_to_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _to_jsonable(item) for key, item in value.items()}
+    return value
+
+
+@dataclass
+class DrawingStyle(ModelMixin):
+    stroke: str | None = "#1f2937"
+    fill: str | None = None
+    line_width: float = 4.0
+    opacity: float = 1.0
     dashed: bool = False
 
-    @field_validator("stroke", "fill")
-    @classmethod
-    def validate_color(cls, value: str | None) -> str | None:
+    def __post_init__(self) -> None:
+        self.stroke = self._normalize_color(self.stroke)
+        self.fill = self._normalize_color(self.fill)
+        self.line_width = _clamp(float(self.line_width), 0.5, 48.0)
+        self.opacity = _clamp(float(self.opacity), 0.05, 1.0)
+        self.dashed = bool(self.dashed)
+
+    @staticmethod
+    def _normalize_color(value: str | None) -> str | None:
         if value is None:
-            return value
-        if not value.startswith("#") or len(value) not in {4, 7}:
+            return None
+        if not isinstance(value, str) or not value.startswith("#") or len(value) not in {4, 7}:
             raise ValueError("color must be a hex value such as #ff0000")
         return value.lower()
 
 
-class Geometry(BaseModel):
-    x: float | None = Field(default=None, ge=0, le=1)
-    y: float | None = Field(default=None, ge=0, le=1)
-    x2: float | None = Field(default=None, ge=0, le=1)
-    y2: float | None = Field(default=None, ge=0, le=1)
-    width: float | None = Field(default=None, ge=0.01, le=1)
-    height: float | None = Field(default=None, ge=0.01, le=1)
-    radius: float | None = Field(default=None, ge=0.01, le=0.6)
+@dataclass
+class Geometry(ModelMixin):
+    x: float | None = None
+    y: float | None = None
+    x2: float | None = None
+    y2: float | None = None
+    width: float | None = None
+    height: float | None = None
+    radius: float | None = None
+
+    def __post_init__(self) -> None:
+        for key in ("x", "y", "x2", "y2"):
+            value = getattr(self, key)
+            if value is not None:
+                setattr(self, key, _clamp(float(value), 0.0, 1.0))
+        for key in ("width", "height"):
+            value = getattr(self, key)
+            if value is not None:
+                setattr(self, key, _clamp(float(value), 0.01, 1.0))
+        if self.radius is not None:
+            self.radius = _clamp(float(self.radius), 0.01, 0.6)
 
 
-class Vector(BaseModel):
-    dx: float = Field(default=0, ge=-1, le=1)
-    dy: float = Field(default=0, ge=-1, le=1)
+@dataclass
+class Vector(ModelMixin):
+    dx: float = 0
+    dy: float = 0
+
+    def __post_init__(self) -> None:
+        self.dx = _clamp(float(self.dx), -1.0, 1.0)
+        self.dy = _clamp(float(self.dy), -1.0, 1.0)
 
 
-class DrawingOperation(BaseModel):
+@dataclass
+class DrawingOperation(ModelMixin):
     type: OperationType
     shape: ShapeType | None = None
     target: TargetSelector | None = None
-    style: DrawingStyle | None = None
-    geometry: Geometry | None = None
+    style: DrawingStyle | dict[str, Any] | None = None
+    geometry: Geometry | dict[str, Any] | None = None
     text: str | None = None
     value: str | None = None
     amount: float | None = None
-    delta: Vector | None = None
+    delta: Vector | dict[str, Any] | None = None
     description: str = ""
 
+    def __post_init__(self) -> None:
+        self.type = _enum_value(OperationType, self.type)
+        self.shape = _enum_value(ShapeType, self.shape)
+        if isinstance(self.style, dict):
+            self.style = DrawingStyle(**self.style)
+        if isinstance(self.geometry, dict):
+            self.geometry = Geometry(**self.geometry)
+        if isinstance(self.delta, dict):
+            self.delta = Vector(**self.delta)
 
-class CommandRequest(BaseModel):
-    transcript: str = Field(..., min_length=1, max_length=2000)
+
+@dataclass
+class CommandRequest(ModelMixin):
+    transcript: str
     locale: str = "zh-CN"
-    canvas_width: int = Field(default=1280, ge=100, le=10000)
-    canvas_height: int = Field(default=720, ge=100, le=10000)
-    selected_ids: list[str] = Field(default_factory=list)
-    recent_object_ids: list[str] = Field(default_factory=list)
+    canvas_width: int = 1280
+    canvas_height: int = 720
+    selected_ids: list[str] = field(default_factory=list)
+    recent_object_ids: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.transcript = str(self.transcript).strip()
+        if not self.transcript:
+            raise ValueError("transcript is required")
+        self.transcript = self.transcript[:2000]
+        self.locale = str(self.locale or "zh-CN")
+        self.canvas_width = max(100, min(10000, int(self.canvas_width)))
+        self.canvas_height = max(100, min(10000, int(self.canvas_height)))
+        self.selected_ids = [str(item) for item in self.selected_ids]
+        self.recent_object_ids = [str(item) for item in self.recent_object_ids]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CommandRequest:
+        return cls(
+            transcript=data.get("transcript", ""),
+            locale=data.get("locale", "zh-CN"),
+            canvas_width=data.get("canvas_width", 1280),
+            canvas_height=data.get("canvas_height", 720),
+            selected_ids=data.get("selected_ids") or [],
+            recent_object_ids=data.get("recent_object_ids") or [],
+        )
 
 
-class CommandPlan(BaseModel):
-    operations: list[DrawingOperation] = Field(default_factory=list)
-    confidence: float = Field(default=0.0, ge=0, le=1)
+@dataclass
+class CommandPlan(ModelMixin):
+    operations: list[DrawingOperation | dict[str, Any]] = field(default_factory=list)
+    confidence: float = 0.0
     needs_confirmation: bool = False
     spoken_feedback: str = ""
-    warnings: list[str] = Field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     source: PlanSource = PlanSource.RULE
+
+    def __post_init__(self) -> None:
+        self.operations = [
+            operation if isinstance(operation, DrawingOperation) else DrawingOperation(**operation)
+            for operation in self.operations
+        ]
+        self.confidence = _clamp(float(self.confidence), 0.0, 1.0)
+        self.needs_confirmation = bool(self.needs_confirmation)
+        self.warnings = [str(item) for item in self.warnings]
+        self.source = _enum_value(PlanSource, self.source)

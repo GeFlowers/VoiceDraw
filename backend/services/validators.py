@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.domain.models import (
+from backend.domain.models import (
     CommandPlan,
     DrawingOperation,
     DrawingStyle,

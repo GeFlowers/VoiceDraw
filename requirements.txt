@@ -1,9 +1,7 @@
-#Python >=3.11
-fastapi>=0.115.0
-uvicorn[standard]>=0.34.0
-pydantic>=2.7.0
-pydantic-settings>=2.5.0
-python-dotenv>=1.0.1
-langchain>=0.3.0,<0.4.0
-langchain-openai>=0.2.0
-langgraph>=0.2.60
+# Python >=3.11, including Python 3.14.
+uvicorn>=0.34.0
+
+# Optional LLM fallback dependencies. Install these only in a Python version
+# where their binary dependencies are available.
+# langchain>=0.3.0,<0.4.0
+# langchain-openai>=0.2.0

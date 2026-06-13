@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from backend.app.domain.models import DrawingStyle
+from backend.domain.models import DrawingStyle
 
 
 COLOR_ALIASES: dict[str, str] = {

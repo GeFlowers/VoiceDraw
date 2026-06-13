@@ -76,7 +76,7 @@ LLM_TIMEOUT_SECONDS=8
 ### 3. 启动服务
 
 ```powershell
-python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 打开：
@@ -175,10 +175,10 @@ POST /api/commands/interpret
 
 ## 工程化设计
 
-- 领域模型集中在 `backend/app/domain/models.py`，避免前后端协议散落。
-- 规则解析位于 `backend/app/services/rule_parser.py`，LLM 解析位于 `backend/app/services/llm_parser.py`。
-- LangGraph 工作流位于 `backend/app/services/interpreter_graph.py`。
-- 校验和修复逻辑位于 `backend/app/services/validators.py`。
+- 领域模型集中在 `backend/domain/models.py`，避免前后端协议散落。
+- 规则解析位于 `backend/services/rule_parser.py`，LLM 解析位于 `backend/services/llm_parser.py`。
+- LangGraph 工作流位于 `backend/services/interpreter_graph.py`。
+- 校验和修复逻辑位于 `backend/services/validators.py`。
 - 前端维护操作队列，避免连续语音输入造成并发覆盖。
 - 每次复合语音指令作为一个历史快照，撤销行为符合用户预期。
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from backend.app.domain.models import (
+from backend.domain.models import (
     CommandPlan,
     CommandRequest,
     DrawingOperation,
@@ -13,8 +13,8 @@ from backend.app.domain.models import (
     ShapeType,
     Vector,
 )
-from backend.app.services.colors import build_style, extract_color
-from backend.app.services.text_normalizer import (
+from backend.services.colors import build_style, extract_color
+from backend.services.text_normalizer import (
     clamp,
     extract_first_number,
     normalize_text,
