@@ -625,8 +625,41 @@ class RuleBasedParser:
             op = operations[0]
             if op.type == OperationType.NO_OP:
                 return "我没有准确理解这条绘图指令。"
-            return f"已{op.description}。"
-        return f"已拆解并执行 {len(operations)} 个绘图动作。"
+            position = self._position_feedback(op)
+            return f"已{op.description}{position}。"
+        draw_ops = [operation for operation in operations if operation.type in {OperationType.DRAW_SHAPE, OperationType.ADD_TEXT}]
+        if draw_ops:
+            position = self._position_feedback(draw_ops[0])
+            return f"已绘制为一个组合对象，共 {len(draw_ops)} 个部件{position}。"
+        return f"已拆解并执行 {len(operations)} 个动作。"
+
+    def _position_feedback(self, operation: DrawingOperation) -> str:
+        geometry = operation.geometry
+        if geometry is None:
+            return ""
+        x = geometry.x if geometry.x is not None else 0.5
+        y = geometry.y if geometry.y is not None else 0.5
+        return f"，位置在{self._position_name(x, y)}"
+
+    @staticmethod
+    def _position_name(x: float, y: float) -> str:
+        horizontal = "中间"
+        vertical = "中间"
+        if x < 0.34:
+            horizontal = "左侧"
+        elif x > 0.66:
+            horizontal = "右侧"
+        if y < 0.34:
+            vertical = "上方"
+        elif y > 0.66:
+            vertical = "下方"
+        if horizontal == "中间" and vertical == "中间":
+            return "画布中央"
+        if horizontal == "中间":
+            return f"画布{vertical}"
+        if vertical == "中间":
+            return f"画布{horizontal}"
+        return f"画布{horizontal}{vertical}"
 
     def _single(
         self,

@@ -157,6 +157,7 @@ class DrawingOperation(ModelMixin):
     value: str | None = None
     amount: float | None = None
     delta: Vector | dict[str, Any] | None = None
+    group_id: str | None = None
     description: str = ""
 
     def __post_init__(self) -> None:
