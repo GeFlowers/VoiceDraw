@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from backend.app.domain.models import (
+from backend.domain.models import (
     CommandPlan,
     CommandRequest,
     DrawingOperation,
@@ -13,8 +13,8 @@ from backend.app.domain.models import (
     ShapeType,
     Vector,
 )
-from backend.app.services.colors import build_style, extract_color
-from backend.app.services.text_normalizer import (
+from backend.services.colors import build_style, extract_color
+from backend.services.text_normalizer import (
     clamp,
     extract_first_number,
     normalize_text,
@@ -43,6 +43,19 @@ ANCHORS: dict[str, tuple[float, float]] = {
 }
 
 SHAPE_KEYWORDS: list[tuple[ShapeType, tuple[str, ...]]] = [
+    (ShapeType.LIGHTNING, ("闪电", "雷电", "电光")),
+    (ShapeType.FLOWER, ("花朵", "小花", "花")),
+    (ShapeType.SMILE, ("笑脸", "微笑", "表情")),
+    (ShapeType.HEART, ("爱心", "心形", "心")),
+    (ShapeType.STAR, ("五角星", "星星", "星")),
+    (ShapeType.CLOUD, ("云朵", "云")),
+    (ShapeType.SUN, ("太阳", "日光")),
+    (ShapeType.TREE, ("大树", "树木", "树")),
+    (ShapeType.HOUSE, ("房子", "房屋", "小屋")),
+    (ShapeType.MOUNTAIN, ("山峰", "群山", "山")),
+    (ShapeType.HEXAGON, ("六边形", "六角形")),
+    (ShapeType.PENTAGON, ("五边形", "五角形")),
+    (ShapeType.DIAMOND, ("菱形", "钻石")),
     (ShapeType.ARROW, ("箭头", "箭线")),
     (ShapeType.LINE, ("直线", "线段", "一条线", "线")),
     (ShapeType.RECTANGLE, ("长方形", "矩形", "方框", "方块", "正方形")),
@@ -473,6 +486,22 @@ class RuleBasedParser:
             return Geometry(x=x, y=y, width=0.26 * scale, height=0.16 * scale)
         if shape == ShapeType.TRIANGLE:
             return Geometry(x=x, y=y, width=0.24 * scale, height=0.22 * scale)
+        if shape in {
+            ShapeType.STAR,
+            ShapeType.HEART,
+            ShapeType.FLOWER,
+            ShapeType.CLOUD,
+            ShapeType.SUN,
+            ShapeType.TREE,
+            ShapeType.HOUSE,
+            ShapeType.MOUNTAIN,
+            ShapeType.SMILE,
+            ShapeType.LIGHTNING,
+            ShapeType.DIAMOND,
+            ShapeType.PENTAGON,
+            ShapeType.HEXAGON,
+        }:
+            return Geometry(x=x, y=y, width=0.28 * scale, height=0.24 * scale)
         return Geometry(x=x, y=y, width=0.26 * scale, height=0.18 * scale)
 
     def _line_geometry(self, segment: str) -> Geometry:
@@ -562,6 +591,22 @@ class RuleBasedParser:
     def _shape_prefers_fill(self, segment: str, shape: ShapeType) -> bool:
         if shape in {ShapeType.LINE, ShapeType.ARROW}:
             return False
+        if shape in {
+            ShapeType.STAR,
+            ShapeType.HEART,
+            ShapeType.FLOWER,
+            ShapeType.CLOUD,
+            ShapeType.SUN,
+            ShapeType.TREE,
+            ShapeType.HOUSE,
+            ShapeType.MOUNTAIN,
+            ShapeType.SMILE,
+            ShapeType.LIGHTNING,
+            ShapeType.DIAMOND,
+            ShapeType.PENTAGON,
+            ShapeType.HEXAGON,
+        }:
+            return True
         return self._contains_any(segment, ("实心", "填充", "色块"))
 
     def _looks_like_move(self, segment: str) -> bool:

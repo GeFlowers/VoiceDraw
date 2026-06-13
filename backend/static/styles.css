@@ -175,6 +175,51 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.test-command-form {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.test-command-form label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.test-command-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  gap: 8px;
+}
+
+.test-command-row input,
+.test-command-row button {
+  height: 38px;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.test-command-row input {
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #fff;
+}
+
+.test-command-row button {
+  border: 0;
+  color: #fff;
+  background: var(--accent-3);
+  cursor: pointer;
+}
+
+.test-command-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .activity-log {
   flex: 1;
   min-height: 0;
@@ -236,6 +281,10 @@ h1 {
   .transcript-box {
     grid-column: 1 / -1;
     min-height: 64px;
+  }
+
+  .test-command-form {
+    grid-column: 1 / -1;
   }
 
   .activity-log {

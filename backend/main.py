@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+import json
+import mimetypes
+from pathlib import Path
+from typing import Any
+
+from backend.config import Settings, get_settings
+from backend.domain.models import CommandRequest
+from backend.services.interpreter_graph import CommandInterpreter
+
+
+class VoiceDrawApp:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings or get_settings()
+        self.interpreter = CommandInterpreter(self.settings)
+        self.static_dir = Path(__file__).parent / "static"
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self._send_response(send, 404, b"Not Found", "text/plain; charset=utf-8")
+            return
+
+        method = scope.get("method", "GET").upper()
+        path = scope.get("path", "/")
+
+        try:
+            if method == "GET" and path == "/api/health":
+                await self._send_json(
+                    send,
+                    {
+                        "status": "ok",
+                        "env": self.settings.app_env,
+                        "llm_ready": self.interpreter.llm_parser.is_configured,
+                    },
+                )
+                return
+
+            if method == "POST" and path == "/api/commands/interpret":
+                payload = await self._read_json(receive)
+                request = CommandRequest.from_dict(payload)
+                plan = self.interpreter.interpret(request)
+                await self._send_json(send, plan.model_dump())
+                return
+
+            if method == "GET":
+                await self._send_static(send, path)
+                return
+
+            await self._send_response(send, 405, b"Method Not Allowed", "text/plain; charset=utf-8")
+        except ValueError as exc:
+            await self._send_json(send, {"detail": str(exc)}, status=400)
+        except Exception as exc:
+            await self._send_json(send, {"detail": f"Internal server error: {exc}"}, status=500)
+
+    async def _read_body(self, receive: Any) -> bytes:
+        chunks: list[bytes] = []
+        more_body = True
+        while more_body:
+            message = await receive()
+            chunks.append(message.get("body", b""))
+            more_body = bool(message.get("more_body", False))
+        return b"".join(chunks)
+
+    async def _read_json(self, receive: Any) -> dict[str, Any]:
+        body = await self._read_body(receive)
+        if not body:
+            return {}
+        parsed = json.loads(body.decode("utf-8"))
+        if not isinstance(parsed, dict):
+            raise ValueError("request body must be a JSON object")
+        return parsed
+
+    async def _send_static(self, send: Any, path: str) -> None:
+        relative = "index.html" if path in {"", "/"} else path.lstrip("/")
+        target = (self.static_dir / relative).resolve()
+        static_root = self.static_dir.resolve()
+
+        if not str(target).startswith(str(static_root)) or not target.is_file():
+            await self._send_response(send, 404, b"Not Found", "text/plain; charset=utf-8")
+            return
+
+        content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        if content_type.startswith("text/") or content_type in {"application/javascript"}:
+            content_type = f"{content_type}; charset=utf-8"
+        await self._send_response(send, 200, target.read_bytes(), content_type)
+
+    async def _send_json(self, send: Any, data: Any, status: int = 200) -> None:
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        await self._send_response(send, status, body, "application/json; charset=utf-8")
+
+    async def _send_response(self, send: Any, status: int, body: bytes, content_type: str) -> None:
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", content_type.encode("ascii")),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                    (b"access-control-allow-origin", b"*"),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
+def create_app() -> VoiceDrawApp:
+    return VoiceDrawApp()
+
+
+app = create_app()

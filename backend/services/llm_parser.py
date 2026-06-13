@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from backend.app.config import Settings
-from backend.app.domain.models import CommandPlan, CommandRequest, DrawingOperation, OperationType, PlanSource
+from backend.config import Settings
+from backend.domain.models import CommandPlan, CommandRequest, DrawingOperation, OperationType, PlanSource
 
 
 class LLMUnavailableError(RuntimeError):
@@ -11,14 +11,25 @@ class LLMUnavailableError(RuntimeError):
 class LLMCommandParser:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._dependency_error: str | None = None
 
     @property
     def is_configured(self) -> bool:
-        return self.settings.llm_ready
+        if not self.settings.llm_ready:
+            return False
+        try:
+            import pydantic_core._pydantic_core  # noqa: F401
+            import langchain_core.output_parsers  # noqa: F401
+            import langchain_openai  # noqa: F401
+        except Exception as exc:
+            self._dependency_error = str(exc)
+            return False
+        return True
 
     def parse(self, request: CommandRequest, normalized_text: str) -> CommandPlan:
         if not self.is_configured:
-            raise LLMUnavailableError("LLM_BASE_URL or LLM_API_KEY is not configured.")
+            detail = self._dependency_error or "LLM_BASE_URL or LLM_API_KEY is not configured."
+            raise LLMUnavailableError(detail)
 
         from langchain_core.output_parsers import PydanticOutputParser
         from langchain_core.prompts import ChatPromptTemplate

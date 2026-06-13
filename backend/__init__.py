@@ -1,1 +1,1 @@
-"""Voice Draw backend package."""
+"""Application package for Voice Draw."""
