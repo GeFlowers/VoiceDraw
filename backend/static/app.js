@@ -93,8 +93,10 @@ function applyPlan(plan, transcript) {
   const shouldSnapshot = operations.some((operation) => mutatingTypes.has(operation.type));
   if (shouldSnapshot) pushHistory();
 
+  const drawOperations = operations.filter((operation) => operation.type === "draw_shape" || operation.type === "add_text");
+  const planGroupId = drawOperations.length ? `group_${Date.now()}_${Math.random().toString(16).slice(2)}` : null;
   for (const operation of operations) {
-    applyOperation(operation);
+    applyOperation(operation, planGroupId);
   }
   render();
   updateMetrics();
@@ -102,11 +104,11 @@ function applyPlan(plan, transcript) {
   speak(plan.spoken_feedback || "指令已处理");
 }
 
-function applyOperation(operation) {
+function applyOperation(operation, planGroupId = null) {
   switch (operation.type) {
     case "draw_shape":
     case "add_text":
-      addObject(operation);
+      addObject(operation, operation.group_id || planGroupId);
       break;
     case "set_style":
       updateStyle(operation);
@@ -149,10 +151,11 @@ function applyOperation(operation) {
   }
 }
 
-function addObject(operation) {
+function addObject(operation, groupId = null) {
   const id = `obj_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const object = {
     id,
+    groupId: groupId || id,
     type: operation.type === "add_text" ? "text" : operation.shape,
     text: operation.text || "",
     geometry: { ...(operation.geometry || {}) },
@@ -160,7 +163,7 @@ function addObject(operation) {
     rotation: 0,
   };
   state.objects.push(object);
-  state.selectedIds = [id];
+  state.selectedIds = getGroupObjects(object.groupId).map((item) => item.id);
 }
 
 function normalizeStyle(style) {
@@ -178,7 +181,7 @@ function selectTarget(target = "selected") {
     state.selectedIds = state.objects.map((object) => object.id);
   } else if (target === "last") {
     const last = state.objects[state.objects.length - 1];
-    state.selectedIds = last ? [last.id] : [];
+    state.selectedIds = last ? getGroupObjects(last.groupId).map((object) => object.id) : [];
   } else if (target === "none") {
     state.selectedIds = [];
   }
@@ -186,9 +189,24 @@ function selectTarget(target = "selected") {
 
 function getTargets(target = "selected") {
   if (target === "all") return state.objects;
-  if (target === "last") return state.objects.length ? [state.objects[state.objects.length - 1]] : [];
-  if (!state.selectedIds.length && state.objects.length) return [state.objects[state.objects.length - 1]];
-  return state.objects.filter((object) => state.selectedIds.includes(object.id));
+  if (target === "last") {
+    const last = state.objects[state.objects.length - 1];
+    return last ? getGroupObjects(last.groupId) : [];
+  }
+  if (!state.selectedIds.length && state.objects.length) {
+    const last = state.objects[state.objects.length - 1];
+    return getGroupObjects(last.groupId);
+  }
+  const selectedGroupIds = new Set(
+    state.objects
+      .filter((object) => state.selectedIds.includes(object.id))
+      .map((object) => object.groupId || object.id),
+  );
+  return state.objects.filter((object) => selectedGroupIds.has(object.groupId || object.id));
+}
+
+function getGroupObjects(groupId) {
+  return state.objects.filter((object) => (object.groupId || object.id) === groupId);
 }
 
 function deleteTarget(target = "selected") {
@@ -276,9 +294,20 @@ function render() {
   for (const object of state.objects) {
     drawObject(object);
   }
-  for (const object of getTargets("selected")) {
-    drawSelection(object);
+  for (const group of getSelectedGroups()) {
+    drawSelection(group);
   }
+}
+
+function getSelectedGroups() {
+  const selectedObjects = getTargets("selected");
+  const groups = new Map();
+  for (const object of selectedObjects) {
+    const groupId = object.groupId || object.id;
+    if (!groups.has(groupId)) groups.set(groupId, []);
+    groups.get(groupId).push(object);
+  }
+  return [...groups.values()];
 }
 
 function drawObject(object) {
@@ -655,14 +684,29 @@ function fillAndStroke() {
   ctx.stroke();
 }
 
-function drawSelection(object) {
-  const bounds = getBounds(object);
+function drawSelection(group) {
+  const objects = Array.isArray(group) ? group : [group];
+  const bounds = getGroupBounds(objects);
   ctx.save();
   ctx.strokeStyle = "#2f6fed";
   ctx.lineWidth = 2;
   ctx.setLineDash([7, 5]);
   ctx.strokeRect(bounds.x - 6, bounds.y - 6, bounds.width + 12, bounds.height + 12);
   ctx.restore();
+}
+
+function getGroupBounds(objects) {
+  const bounds = objects.map((object) => getBounds(object));
+  const left = Math.min(...bounds.map((item) => item.x));
+  const top = Math.min(...bounds.map((item) => item.y));
+  const right = Math.max(...bounds.map((item) => item.x + item.width));
+  const bottom = Math.max(...bounds.map((item) => item.y + item.height));
+  return {
+    x: left,
+    y: top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  };
 }
 
 function getBounds(object) {
@@ -710,8 +754,12 @@ function clamp(value, min = 0, max = 1) {
 }
 
 function updateMetrics() {
-  objectCount.textContent = String(state.objects.length);
-  selectionCount.textContent = String(state.selectedIds.length);
+  objectCount.textContent = String(countGroups(state.objects));
+  selectionCount.textContent = String(countGroups(getTargets("selected")));
+}
+
+function countGroups(objects) {
+  return new Set(objects.map((object) => object.groupId || object.id)).size;
 }
 
 function addLog(transcript, feedback) {
@@ -751,7 +799,7 @@ async function processQueue() {
           canvas_width: state.viewport.width,
           canvas_height: state.viewport.height,
           selected_ids: state.selectedIds,
-          recent_object_ids: state.objects.slice(-10).map((object) => object.id),
+          recent_object_ids: getRecentGroupIds(10),
         }),
       });
       if (!response.ok) {
@@ -768,6 +816,16 @@ async function processQueue() {
   }
   state.processing = false;
   if (recognitionActive) setStatus("listening", "正在聆听");
+}
+
+function getRecentGroupIds(limit) {
+  const ids = [];
+  for (let index = state.objects.length - 1; index >= 0; index -= 1) {
+    const groupId = state.objects[index].groupId || state.objects[index].id;
+    if (!ids.includes(groupId)) ids.push(groupId);
+    if (ids.length >= limit) break;
+  }
+  return ids.reverse();
 }
 
 function initTextTesting() {
