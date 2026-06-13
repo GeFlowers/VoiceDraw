@@ -1,7 +1,1 @@
-# Python >=3.11, including Python 3.14.
 uvicorn>=0.34.0
-
-# Optional LLM fallback dependencies. Install these only in a Python version
-# where their binary dependencies are available.
-# langchain>=0.3.0,<0.4.0
-# langchain-openai>=0.2.0

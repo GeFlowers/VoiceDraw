@@ -7,6 +7,8 @@ const transcriptText = document.querySelector("#transcriptText");
 const activityLog = document.querySelector("#activityLog");
 const objectCount = document.querySelector("#objectCount");
 const selectionCount = document.querySelector("#selectionCount");
+const testCommandForm = document.querySelector("#testCommandForm");
+const testCommandInput = document.querySelector("#testCommandInput");
 
 const state = {
   objects: [],
@@ -307,6 +309,45 @@ function drawObject(object) {
       case "triangle":
         drawTriangle(object.geometry);
         break;
+      case "diamond":
+        drawDiamond(object.geometry);
+        break;
+      case "pentagon":
+        drawRegularPolygon(object.geometry, 5, -Math.PI / 2);
+        break;
+      case "hexagon":
+        drawRegularPolygon(object.geometry, 6, Math.PI / 6);
+        break;
+      case "star":
+        drawStar(object.geometry);
+        break;
+      case "heart":
+        drawHeart(object.geometry);
+        break;
+      case "flower":
+        drawFlower(object.geometry);
+        break;
+      case "cloud":
+        drawCloud(object.geometry);
+        break;
+      case "sun":
+        drawSun(object.geometry);
+        break;
+      case "tree":
+        drawTree(object.geometry);
+        break;
+      case "house":
+        drawHouse(object.geometry);
+        break;
+      case "mountain":
+        drawMountain(object.geometry);
+        break;
+      case "smile":
+        drawSmile(object.geometry);
+        break;
+      case "lightning":
+        drawLightning(object.geometry);
+        break;
       case "text":
         drawText(object);
         break;
@@ -386,6 +427,215 @@ function drawTriangle(geometry) {
   ctx.moveTo(x, y - height / 2);
   ctx.lineTo(x + width / 2, y + height / 2);
   ctx.lineTo(x - width / 2, y + height / 2);
+  ctx.closePath();
+  fillAndStroke();
+}
+
+function drawDiamond(geometry) {
+  const width = pw(geometry.width ?? 0.24);
+  const height = ph(geometry.height ?? 0.24);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  ctx.beginPath();
+  ctx.moveTo(x, y - height / 2);
+  ctx.lineTo(x + width / 2, y);
+  ctx.lineTo(x, y + height / 2);
+  ctx.lineTo(x - width / 2, y);
+  ctx.closePath();
+  fillAndStroke();
+}
+
+function drawRegularPolygon(geometry, sides, startAngle = 0) {
+  const width = pw(geometry.width ?? 0.24);
+  const height = ph(geometry.height ?? 0.24);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  const radius = Math.min(width, height) / 2;
+  ctx.beginPath();
+  for (let index = 0; index < sides; index += 1) {
+    const angle = startAngle + (index / sides) * Math.PI * 2;
+    const pxValue = x + Math.cos(angle) * radius;
+    const pyValue = y + Math.sin(angle) * radius;
+    if (index === 0) ctx.moveTo(pxValue, pyValue);
+    else ctx.lineTo(pxValue, pyValue);
+  }
+  ctx.closePath();
+  fillAndStroke();
+}
+
+function drawStar(geometry) {
+  const width = pw(geometry.width ?? 0.26);
+  const height = ph(geometry.height ?? 0.26);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  const outer = Math.min(width, height) / 2;
+  const inner = outer * 0.42;
+  ctx.beginPath();
+  for (let index = 0; index < 10; index += 1) {
+    const radius = index % 2 === 0 ? outer : inner;
+    const angle = -Math.PI / 2 + (index / 10) * Math.PI * 2;
+    const pxValue = x + Math.cos(angle) * radius;
+    const pyValue = y + Math.sin(angle) * radius;
+    if (index === 0) ctx.moveTo(pxValue, pyValue);
+    else ctx.lineTo(pxValue, pyValue);
+  }
+  ctx.closePath();
+  fillAndStroke();
+}
+
+function drawHeart(geometry) {
+  const width = pw(geometry.width ?? 0.26);
+  const height = ph(geometry.height ?? 0.24);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  ctx.beginPath();
+  ctx.moveTo(x, y + height * 0.35);
+  ctx.bezierCurveTo(x - width * 0.55, y, x - width * 0.38, y - height * 0.45, x, y - height * 0.18);
+  ctx.bezierCurveTo(x + width * 0.38, y - height * 0.45, x + width * 0.55, y, x, y + height * 0.35);
+  ctx.closePath();
+  fillAndStroke();
+}
+
+function drawFlower(geometry) {
+  const width = pw(geometry.width ?? 0.28);
+  const height = ph(geometry.height ?? 0.26);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  const petalRadiusX = width * 0.16;
+  const petalRadiusY = height * 0.28;
+  const oldFill = ctx.fillStyle;
+  for (let index = 0; index < 6; index += 1) {
+    const angle = (index / 6) * Math.PI * 2;
+    ctx.save();
+    ctx.translate(x + Math.cos(angle) * width * 0.18, y + Math.sin(angle) * height * 0.18);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, petalRadiusX, petalRadiusY, 0, 0, Math.PI * 2);
+    fillAndStroke();
+    ctx.restore();
+  }
+  ctx.fillStyle = "#facc15";
+  ctx.beginPath();
+  ctx.arc(x, y, Math.min(width, height) * 0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = oldFill;
+}
+
+function drawCloud(geometry) {
+  const width = pw(geometry.width ?? 0.3);
+  const height = ph(geometry.height ?? 0.2);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  ctx.beginPath();
+  ctx.ellipse(x - width * 0.22, y + height * 0.08, width * 0.24, height * 0.28, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y - height * 0.08, width * 0.3, height * 0.38, 0, 0, Math.PI * 2);
+  ctx.ellipse(x + width * 0.24, y + height * 0.08, width * 0.25, height * 0.3, 0, 0, Math.PI * 2);
+  ctx.rect(x - width * 0.36, y, width * 0.72, height * 0.28);
+  fillAndStroke();
+}
+
+function drawSun(geometry) {
+  const width = pw(geometry.width ?? 0.25);
+  const height = ph(geometry.height ?? 0.25);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  const radius = Math.min(width, height) * 0.25;
+  for (let index = 0; index < 12; index += 1) {
+    const angle = (index / 12) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(angle) * radius * 1.35, y + Math.sin(angle) * radius * 1.35);
+    ctx.lineTo(x + Math.cos(angle) * radius * 2.0, y + Math.sin(angle) * radius * 2.0);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  fillAndStroke();
+}
+
+function drawTree(geometry) {
+  const width = pw(geometry.width ?? 0.26);
+  const height = ph(geometry.height ?? 0.32);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  const oldFill = ctx.fillStyle;
+  ctx.fillStyle = "#92400e";
+  ctx.fillRect(x - width * 0.08, y + height * 0.08, width * 0.16, height * 0.34);
+  ctx.strokeRect(x - width * 0.08, y + height * 0.08, width * 0.16, height * 0.34);
+  ctx.fillStyle = oldFill === "transparent" ? "#22c55e" : oldFill;
+  ctx.beginPath();
+  ctx.arc(x, y - height * 0.12, Math.min(width, height) * 0.32, 0, Math.PI * 2);
+  fillAndStroke();
+  ctx.fillStyle = oldFill;
+}
+
+function drawHouse(geometry) {
+  const width = pw(geometry.width ?? 0.3);
+  const height = ph(geometry.height ?? 0.26);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  const oldFill = ctx.fillStyle;
+  ctx.beginPath();
+  ctx.moveTo(x, y - height * 0.5);
+  ctx.lineTo(x + width * 0.5, y - height * 0.1);
+  ctx.lineTo(x - width * 0.5, y - height * 0.1);
+  ctx.closePath();
+  fillAndStroke();
+  ctx.fillStyle = oldFill === "transparent" ? "#f97316" : oldFill;
+  ctx.fillRect(x - width * 0.38, y - height * 0.1, width * 0.76, height * 0.55);
+  ctx.strokeRect(x - width * 0.38, y - height * 0.1, width * 0.76, height * 0.55);
+  ctx.fillStyle = "#92400e";
+  ctx.fillRect(x - width * 0.08, y + height * 0.16, width * 0.16, height * 0.29);
+  ctx.strokeRect(x - width * 0.08, y + height * 0.16, width * 0.16, height * 0.29);
+  ctx.fillStyle = oldFill;
+}
+
+function drawMountain(geometry) {
+  const width = pw(geometry.width ?? 0.34);
+  const height = ph(geometry.height ?? 0.24);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  ctx.beginPath();
+  ctx.moveTo(x - width * 0.5, y + height * 0.45);
+  ctx.lineTo(x - width * 0.18, y - height * 0.45);
+  ctx.lineTo(x + width * 0.12, y + height * 0.45);
+  ctx.lineTo(x + width * 0.28, y - height * 0.28);
+  ctx.lineTo(x + width * 0.5, y + height * 0.45);
+  ctx.closePath();
+  fillAndStroke();
+}
+
+function drawSmile(geometry) {
+  const width = pw(geometry.width ?? 0.24);
+  const height = ph(geometry.height ?? 0.24);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  const radius = Math.min(width, height) * 0.42;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  fillAndStroke();
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.beginPath();
+  ctx.arc(x - radius * 0.35, y - radius * 0.22, Math.max(2, radius * 0.08), 0, Math.PI * 2);
+  ctx.arc(x + radius * 0.35, y - radius * 0.22, Math.max(2, radius * 0.08), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y + radius * 0.05, radius * 0.46, 0.18 * Math.PI, 0.82 * Math.PI);
+  ctx.stroke();
+}
+
+function drawLightning(geometry) {
+  const width = pw(geometry.width ?? 0.22);
+  const height = ph(geometry.height ?? 0.28);
+  const x = px(geometry.x ?? 0.5);
+  const y = py(geometry.y ?? 0.5);
+  ctx.beginPath();
+  ctx.moveTo(x + width * 0.12, y - height * 0.5);
+  ctx.lineTo(x - width * 0.28, y + height * 0.05);
+  ctx.lineTo(x - width * 0.04, y + height * 0.05);
+  ctx.lineTo(x - width * 0.16, y + height * 0.5);
+  ctx.lineTo(x + width * 0.3, y - height * 0.12);
+  ctx.lineTo(x + width * 0.06, y - height * 0.12);
   ctx.closePath();
   fillAndStroke();
 }
@@ -520,6 +770,23 @@ async function processQueue() {
   if (recognitionActive) setStatus("listening", "正在聆听");
 }
 
+function initTextTesting() {
+  testCommandForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const command = testCommandInput.value.trim();
+    if (!command) return;
+    testCommandInput.value = "";
+    await enqueueTranscript(command);
+  });
+
+  const params = new URLSearchParams(window.location.search);
+  const testCommand = params.get("test");
+  if (testCommand) {
+    testCommandInput.value = testCommand;
+    window.setTimeout(() => enqueueTranscript(testCommand), 250);
+  }
+}
+
 function initVoice() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -588,4 +855,5 @@ document.addEventListener("visibilitychange", () => {
 
 resizeCanvas();
 updateMetrics();
+initTextTesting();
 initVoice();
