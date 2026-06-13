@@ -34,9 +34,11 @@ const mutatingTypes = new Set([
 ]);
 
 let recognition = null;
+let SpeechRecognitionCtor = null;
 let recognitionActive = false;
 let restartTimer = null;
 let voiceBlocked = false;
+let voiceRestarting = false;
 
 function setStatus(kind, message) {
   listenDot.classList.remove("listening", "processing", "error");
@@ -816,6 +818,7 @@ async function processQueue() {
     }
   }
   state.processing = false;
+  if (!recognitionActive) scheduleListeningRestart();
   if (recognitionActive) setStatus("listening", "正在聆听");
 }
 
@@ -853,7 +856,15 @@ function initVoice() {
     return;
   }
 
-  recognition = new SpeechRecognition();
+  SpeechRecognitionCtor = SpeechRecognition;
+  createRecognition();
+  startListening();
+}
+
+function createRecognition() {
+  if (!SpeechRecognitionCtor) return;
+
+  recognition = new SpeechRecognitionCtor();
   recognition.lang = "zh-CN";
   recognition.continuous = true;
   recognition.interimResults = true;
@@ -861,6 +872,7 @@ function initVoice() {
 
   recognition.onstart = () => {
     recognitionActive = true;
+    voiceRestarting = false;
     setStatus("listening", "正在聆听");
   };
 
@@ -873,10 +885,7 @@ function initVoice() {
 
   recognition.onend = () => {
     recognitionActive = false;
-    clearTimeout(restartTimer);
-    if (!voiceBlocked) {
-      restartTimer = setTimeout(() => startListening(), 600);
-    }
+    scheduleListeningRestart();
   };
 
   recognition.onresult = (event) => {
@@ -894,17 +903,30 @@ function initVoice() {
     if (finalTranscript) enqueueTranscript(finalTranscript);
   };
 
-  startListening();
 }
 
 function startListening() {
-  if (!recognition || recognitionActive || voiceBlocked) return;
+  if (recognitionActive || voiceBlocked || state.processing) return;
+  if (!recognition) createRecognition();
+  if (!recognition) return;
   try {
     recognition.start();
   } catch {
     clearTimeout(restartTimer);
+    recognition = null;
     restartTimer = setTimeout(() => startListening(), 1000);
   }
+}
+
+function scheduleListeningRestart() {
+  clearTimeout(restartTimer);
+  if (voiceBlocked || state.processing || voiceRestarting) return;
+  voiceRestarting = true;
+  recognition = null;
+  restartTimer = setTimeout(() => {
+    voiceRestarting = false;
+    startListening();
+  }, 600);
 }
 
 window.addEventListener("resize", resizeCanvas);
