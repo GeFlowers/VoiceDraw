@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voice Draw</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Voice Draw</h1>
+          <p id="statusText">初始化语音引擎</p>
+        </div>
+        <div class="signal" aria-live="polite">
+          <span id="listenDot" class="dot"></span>
+          <span id="signalText">准备中</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="canvas-stage" aria-label="绘图画布">
+          <canvas id="drawingCanvas"></canvas>
+        </section>
+        <aside class="activity-panel" aria-live="polite">
+          <div class="metric-row">
+            <span>对象</span>
+            <strong id="objectCount">0</strong>
+          </div>
+          <div class="metric-row">
+            <span>选中</span>
+            <strong id="selectionCount">0</strong>
+          </div>
+          <div class="transcript-box">
+            <span>语音</span>
+            <p id="transcriptText">等待输入</p>
+          </div>
+          <ol id="activityLog" class="activity-log"></ol>
+        </aside>
+      </main>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

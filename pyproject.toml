@@ -1,0 +1,17 @@
+[project]
+name = "voice-draw"
+version = "0.1.0"
+description = "A voice-only AI drawing tool powered by LangChain and LangGraph."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
