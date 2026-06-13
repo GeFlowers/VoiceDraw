@@ -41,6 +41,7 @@ let voiceBlocked = false;
 function setStatus(kind, message) {
   listenDot.classList.remove("listening", "processing", "error");
   if (kind) listenDot.classList.add(kind);
+  document.body.dataset.state = kind || "idle";
   signalText.textContent = message;
   statusText.textContent = message;
 }

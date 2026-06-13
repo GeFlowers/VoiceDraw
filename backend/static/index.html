@@ -9,13 +9,21 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
+        <div class="brand-block">
           <h1>Voice Draw</h1>
           <p id="statusText">初始化语音引擎</p>
         </div>
-        <div class="signal" aria-live="polite">
-          <span id="listenDot" class="dot"></span>
-          <span id="signalText">准备中</span>
+        <div class="signal-card" aria-live="polite">
+          <div class="waveform" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="signal">
+            <span id="listenDot" class="dot"></span>
+            <span id="signalText">准备中</span>
+          </div>
         </div>
       </header>
 
@@ -33,7 +41,7 @@
             <strong id="selectionCount">0</strong>
           </div>
           <div class="transcript-box">
-            <span>语音</span>
+            <span>输入</span>
             <p id="transcriptText">等待输入</p>
           </div>
           <form id="testCommandForm" class="test-command-form">
