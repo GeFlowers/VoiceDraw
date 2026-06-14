@@ -9,7 +9,7 @@ import urllib.request
 from typing import Any
 
 from backend.config import Settings
-from backend.domain.models import CommandPlan, CommandRequest, DrawingOperation, OperationType, PlanSource
+from backend.domain.models import CommandPlan, CommandRequest, DrawingOperation, OperationType, PlanSource, ShapeType
 
 
 class LLMUnavailableError(RuntimeError):
@@ -18,12 +18,28 @@ class LLMUnavailableError(RuntimeError):
     pass
 
 
+ENUM_CATALOG = {
+    "OperationType": [item.value for item in OperationType],
+    "ShapeType": [item.value for item in ShapeType],
+    "TargetSelector": ["selected", "last", "all", "none"],
+    "PathCommand": ["M", "L", "Q", "C", "Z"],
+}
+
+
 # 提供给模型的输出结构示例，用于约束绘图计划字段和取值。
 PLAN_SCHEMA_HINT = {
+    "metadata": {
+        "enum_intent": {
+            "operation_types": ["draw_path"],
+            "shape_types": ["path"],
+            "target": "none",
+            "summary": "把用户的话归纳为枚举动作和要绘制的对象",
+        }
+    },
     "operations": [
         {
-            "type": "draw_path | draw_shape | add_text | set_style | set_background | select | delete | move | resize | rotate | clear | undo | redo | export | announce | no_op",
-            "shape": "line | arrow | rectangle | circle | ellipse | triangle | diamond | pentagon | hexagon | star | heart | flower | cloud | sun | tree | house | mountain | smile | lightning",
+            "type": "必须是 OperationType 枚举值",
+            "shape": "draw_shape 时必须是 ShapeType 枚举值；draw_path 不填 shape",
             "path": [
                 {"command": "M", "x": 0.1, "y": 0.1},
                 {"command": "L", "x": 0.9, "y": 0.1},
@@ -34,10 +50,10 @@ PLAN_SCHEMA_HINT = {
             "geometry": {"x": 0.5, "y": 0.5, "x2": 0.8, "y2": 0.5, "width": 0.24, "height": 0.18, "radius": 0.1},
             "style": {"stroke": "#111827", "fill": None, "line_width": 4, "opacity": 1, "dashed": False},
             "text": "optional text",
-            "value": "optional value",
+            "value": "set_background/export/announce/set_canvas_size 使用的可选值",
             "amount": 1.2,
             "delta": {"dx": 0.05, "dy": 0},
-            "target": "selected | last | all | none",
+            "target": "必须是 TargetSelector 枚举值",
             "description": "brief Chinese description",
         }
     ],
@@ -48,19 +64,34 @@ PLAN_SCHEMA_HINT = {
 }
 
 
-# 系统提示词要求模型只输出 JSON，并鼓励复杂物体拆成矢量路径组合。
+# 系统提示词要求模型先枚举化理解，再输出 JSON 绘图计划。
 SYSTEM_PROMPT = f"""
-你是 Voice Draw 的 AI 命令规划器。你的任务不是做关键词匹配，而是把中文语音指令理解成可执行的矢量绘图计划。
+你是 VoiceDraw 的 AI 矢量绘图规划器。你的任务是理解一段中文语音命令，先把意图归纳到固定枚举，再按枚举生成可执行绘图计划。
+
+可用枚举：
+{json.dumps(ENUM_CATALOG, ensure_ascii=False)}
+
+工作方式：
+1. 不要做关键词查找式匹配，要根据整句话语义判断用户真正想做的动作。
+2. 先把用户意图归纳成 metadata.enum_intent：
+   - operation_types: 使用 OperationType 枚举值数组。
+   - shape_types: 使用 ShapeType 枚举值数组；复杂自然物体可用 path。
+   - target: 使用 TargetSelector 枚举值。
+   - summary: 简短中文说明你归纳出的意图。
+3. 再根据 enum_intent 生成 operations。operations 中的 type、shape、target 必须严格使用上面的枚举值。
 
 输出要求：
 1. 只输出一个 JSON 对象，不要 markdown，不要解释。
 2. 坐标全部使用 0 到 1 的归一化画布坐标。
-3. 优先使用 draw_path 表达自然物体、复杂轮廓、图标和组合草图；只有圆、矩形、线、箭头等明确几何体才使用 draw_shape。
-4. 一个复杂场景要拆成多个操作，例如“画一辆车”应该包含车身、轮子、车窗等多个路径或形状。
-5. 操作现有对象时使用 target: selected、last、all 或 none。
-6. 无法确定用户意图时返回 no_op，并在 spoken_feedback 里说明需要用户补充什么。
-7. 所有颜色必须是 #rrggbb 或 transparent。
-8. draw_path 支持 M、L、Q、C、Z 命令。每条路径尽量控制在 4 到 14 个命令内，必要时用多条路径组合。
+3. 基础几何体用 draw_shape，例如 line、arrow、rectangle、circle、ellipse、triangle、diamond、pentagon、hexagon。
+4. 自然物体、复杂轮廓、图标、组合草图优先用 draw_path；一个复杂对象要拆成多个路径/形状，例如“画一辆车”要包含车身、轮子、车窗等多个 operations。
+5. add_text 必须带 text 和 geometry。
+6. draw_shape 必须带 shape 和 geometry；draw_path 必须带 path。
+7. 设置画布尺寸使用 set_canvas_size，value 必须是 "宽x高" 格式，例如 "1280x720"，宽高单位是像素，范围 240 到 4096。
+8. 操作现有对象时使用 target: selected、last、all 或 none。
+9. 无法确定用户意图时返回 no_op，并在 spoken_feedback 里说明需要用户补充什么。
+10. style.stroke 和 style.fill 只能是 #rrggbb 或 null；背景透明用 set_background 的 value: "transparent"。
+11. draw_path 支持 M、L、Q、C、Z 命令。每条路径尽量控制在 4 到 14 个命令内，必要时用多条路径组合。
 
 JSON 结构参考：
 {json.dumps(PLAN_SCHEMA_HINT, ensure_ascii=False)}
@@ -79,13 +110,13 @@ class LLMCommandParser:
         """检查当前配置是否足够发起 LLM 请求。"""
         return self.settings.llm_ready
 
-    def parse(self, request: CommandRequest, normalized_text: str) -> CommandPlan:
+    def parse(self, request: CommandRequest) -> CommandPlan:
         """发送语音上下文到 LLM，并把返回 JSON 转成 CommandPlan。"""
         if not self.is_configured:
             raise LLMUnavailableError("LLM_BASE_URL or LLM_API_KEY is not configured.")
 
         endpoint = self._completion_url()
-        payload = self._build_payload(request, normalized_text)
+        payload = self._build_payload(request)
         started_at = time.perf_counter()
         print(
             f"[voice-draw] ai_api_call_started model={self.settings.llm_model} endpoint={self._redact_endpoint(endpoint)}",
@@ -120,21 +151,21 @@ class LLMCommandParser:
             "llm_attempted": True,
             "llm_model": self.settings.llm_model,
             "llm_latency_ms": latency_ms,
-            "planner": "ai_first_vector_planner",
+            "planner": "ai_enum_vector_planner",
         }
         print(f"[voice-draw] ai_api_call_completed latency_ms={latency_ms}", flush=True)
         return plan.model_copy(update={"source": PlanSource.LLM, "metadata": metadata})
 
-    def _build_payload(self, request: CommandRequest, normalized_text: str) -> dict[str, Any]:
+    def _build_payload(self, request: CommandRequest) -> dict[str, Any]:
         """组装 Chat Completions 请求体。"""
         user_payload = {
             "transcript": request.transcript,
-            "normalized_text": normalized_text,
             "locale": request.locale,
             "canvas_width": request.canvas_width,
             "canvas_height": request.canvas_height,
             "selected_ids": request.selected_ids,
             "recent_object_ids": request.recent_object_ids,
+            "enum_catalog": ENUM_CATALOG,
         }
         return {
             "model": self.settings.llm_model,
@@ -229,6 +260,12 @@ class LLMCommandParser:
             "warnings",
             "metadata",
         }
+        if "intent" in plan_data and "metadata" not in plan_data:
+            plan_data["metadata"] = {"enum_intent": plan_data["intent"]}
+        if "enum_intent" in plan_data and "metadata" not in plan_data:
+            plan_data["metadata"] = {"enum_intent": plan_data["enum_intent"]}
+        if "metadata" in plan_data and not isinstance(plan_data["metadata"], dict):
+            plan_data["metadata"] = {}
         operations = plan_data.get("operations")
         if not isinstance(operations, list):
             # 没有操作列表时生成 no_op，交给上层展示可理解的失败反馈。

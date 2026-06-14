@@ -31,11 +31,7 @@ body {
 
 body {
   overflow: hidden;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px),
-    linear-gradient(135deg, #101312 0%, #161915 45%, #201f18 100%);
-  background-size: 34px 34px, 34px 34px, auto;
+  background: linear-gradient(135deg, #101312 0%, #161915 45%, #201f18 100%);
   color: var(--ink);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -240,11 +236,7 @@ h1 {
   min-height: 0;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 8px;
-  background:
-    linear-gradient(90deg, rgba(15, 19, 18, 0.05) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(15, 19, 18, 0.05) 1px, transparent 1px),
-    var(--canvas);
-  background-size: 28px 28px;
+  background: var(--canvas);
   box-shadow: var(--shadow);
 }
 
@@ -304,6 +296,12 @@ h1 {
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#latencyText,
+#historyCountText,
+#confidenceText {
+  color: var(--teal);
 }
 
 .transcript-box {

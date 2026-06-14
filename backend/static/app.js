@@ -9,7 +9,6 @@ const selectionCount = document.querySelector("#selectionCount");
 const testCommandForm = document.querySelector("#testCommandForm");
 const testCommandInput = document.querySelector("#testCommandInput");
 const aiStatusText = document.querySelector("#aiStatusText");
-const sourceText = document.querySelector("#sourceText");
 const confidenceText = document.querySelector("#confidenceText");
 const latencyText = document.querySelector("#latencyText");
 const modelText = document.querySelector("#modelText");
@@ -39,6 +38,7 @@ const mutatingTypes = new Set([
   "add_text",
   "set_style",
   "set_background",
+  "set_canvas_size",
   "delete",
   "move",
   "resize",
@@ -77,6 +77,7 @@ function snapshot() {
     objects: state.objects,
     selectedIds: state.selectedIds,
     background: state.background,
+    canvasSize: state.canvasSize,
   });
 }
 
@@ -85,6 +86,8 @@ function restore(serialized) {
   state.objects = parsed.objects || [];
   state.selectedIds = parsed.selectedIds || [];
   state.background = parsed.background || "#fffefa";
+  state.canvasSize = parsed.canvasSize || { ...DEFAULT_CANVAS_SIZE };
+  resizeCanvas();
 }
 
 function pushHistory() {
@@ -123,6 +126,9 @@ function applyOperation(operation, planGroupId = null) {
       break;
     case "set_background":
       state.background = operation.value || "#fffefa";
+      break;
+    case "set_canvas_size":
+      setCanvasSizeFromOperation(operation);
       break;
     case "select":
       selectTarget(operation.target);
@@ -903,20 +909,10 @@ function updatePlanTelemetry(plan) {
   const operations = Array.isArray(plan.operations) ? plan.operations : [];
   const metadata = plan.metadata || {};
   const confidence = typeof plan.confidence === "number" ? `${Math.round(plan.confidence * 100)}%` : "--";
-  const source = sourceLabel(plan.source, metadata);
-  sourceText.textContent = source;
   confidenceText.textContent = confidence;
   operationCountText.textContent = String(operations.length);
   if (metadata.llm_latency_ms !== undefined) latencyText.textContent = `${metadata.llm_latency_ms} ms`;
   if (metadata.llm_model) modelText.textContent = metadata.llm_model;
-}
-
-function sourceLabel(source, metadata = {}) {
-  if (metadata.llm_attempted && source === "llm") return "AI";
-  if (metadata.llm_attempted) return "AI 兜底";
-  if (source === "rule") return "本地规则";
-  if (source === "repaired") return "修复";
-  return source || "--";
 }
 
 function addLog(transcript, feedback, plan = {}) {
@@ -927,9 +923,10 @@ function addLog(transcript, feedback, plan = {}) {
   body.textContent = feedback;
   const meta = document.createElement("small");
   const metadata = plan.metadata || {};
-  const latency = metadata.llm_latency_ms !== undefined ? ` · ${metadata.llm_latency_ms} ms` : "";
-  const confidence = typeof plan.confidence === "number" ? ` · ${Math.round(plan.confidence * 100)}%` : "";
-  meta.textContent = `${sourceLabel(plan.source, metadata)}${latency}${confidence}`;
+  const details = [];
+  if (metadata.llm_latency_ms !== undefined) details.push(`${metadata.llm_latency_ms} ms`);
+  if (typeof plan.confidence === "number") details.push(`${Math.round(plan.confidence * 100)}%`);
+  meta.textContent = details.join(" · ");
   item.append(title, body, meta);
   activityLog.prepend(item);
   while (activityLog.children.length > 20) {
@@ -951,7 +948,6 @@ async function processQueue() {
   state.processing = true;
   while (state.queue.length) {
     const transcript = state.queue.shift();
-    if (tryApplyCanvasSizeCommand(transcript)) continue;
     setStatus("processing", "解析指令");
     try {
       const response = await fetch("/api/commands/interpret", {
@@ -999,42 +995,21 @@ function getRecentGroupIds(limit) {
   return ids.reverse();
 }
 
-function parseCanvasSizeCommand(transcript) {
-  const text = transcript.replace(/\s+/g, "");
-  if (!/(画布|尺寸|大小|宽|高|分辨率)/.test(text)) return null;
-
-  let match = text.match(/(\d{3,4})\s*[xX×*乘]\s*(\d{3,4})/);
-  if (!match) {
-    match = text.match(/宽(?:度)?(?:设为|设置为|改成|改为|是|到)?(\d{3,4}).*高(?:度)?(?:设为|设置为|改成|改为|是|到)?(\d{3,4})/);
-  }
-  if (!match) {
-    match = text.match(/高(?:度)?(?:设为|设置为|改成|改为|是|到)?(\d{3,4}).*宽(?:度)?(?:设为|设置为|改成|改为|是|到)?(\d{3,4})/);
-    if (match) match = [match[0], match[2], match[1]];
-  }
+function parseCanvasSizeValue(value) {
+  const match = String(value || "").replace(/\s+/g, "").match(/^(\d{3,4})[xX×*乘](\d{3,4})$/);
   if (!match) return null;
-
-  const width = Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Number(match[1])));
-  const height = Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Number(match[2])));
-  return { width, height };
+  return {
+    width: Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Number(match[1]))),
+    height: Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Number(match[2]))),
+  };
 }
 
-function tryApplyCanvasSizeCommand(transcript) {
-  const size = parseCanvasSizeCommand(transcript);
-  if (!size) return false;
+function setCanvasSizeFromOperation(operation) {
+  const size = parseCanvasSizeValue(operation.value);
+  if (!size) return;
   state.canvasSize = size;
   resizeCanvas();
   updateMetrics();
-  const feedback = `画布尺寸已设置为 ${size.width} x ${size.height}`;
-  confidenceText.textContent = "--";
-  operationCountText.textContent = "0";
-  addLog(transcript, feedback, {
-    source: "rule",
-    confidence: 1,
-    operations: [],
-    metadata: {},
-  });
-  setStatus(recognitionActive ? "listening" : "idle", recognitionActive ? "正在聆听" : "待命");
-  return true;
 }
 
 function initTextTesting() {
@@ -1061,12 +1036,8 @@ async function loadHealth() {
     const health = await response.json();
     aiStatusText.textContent = health.llm_ready ? "已连接" : "未配置";
     modelText.textContent = health.llm_model || "--";
-    if (!health.llm_ready) {
-      sourceText.textContent = "AI 未配置";
-    }
   } catch {
     aiStatusText.textContent = "离线";
-    sourceText.textContent = "服务异常";
   }
 }
 

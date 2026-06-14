@@ -14,6 +14,7 @@ class OperationType(str, Enum):
     ADD_TEXT = "add_text"
     SET_STYLE = "set_style"
     SET_BACKGROUND = "set_background"
+    SET_CANVAS_SIZE = "set_canvas_size"
     SELECT = "select"
     DELETE = "delete"
     MOVE = "move"
@@ -54,11 +55,9 @@ class ShapeType(str, Enum):
 
 
 class PlanSource(str, Enum):
-    """标记绘图计划来自规则解析、LLM，还是经过修复后的结果。"""
+    """标记绘图计划来自 AI。"""
 
-    RULE = "rule"
     LLM = "llm"
-    REPAIRED = "repaired"
 
 
 # 操作对象选择器，和前端画布的选中态约定保持一致。
@@ -258,7 +257,7 @@ class CommandPlan(VoiceDrawModel):
     needs_confirmation: bool = False
     spoken_feedback: str = ""
     warnings: list[str] = Field(default_factory=list)
-    source: PlanSource = PlanSource.RULE
+    source: PlanSource = PlanSource.LLM
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("confidence")

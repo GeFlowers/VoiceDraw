@@ -37,7 +37,7 @@ class VoiceDrawApp:
                         "env": self.settings.app_env,
                         "llm_ready": self.interpreter.llm_parser.is_configured,
                         "llm_model": self.settings.llm_model,
-                        "planner_mode": "ai_first_vector_planner",
+                        "planner_mode": "ai_enum_vector_planner",
                     },
                 )
                 return
