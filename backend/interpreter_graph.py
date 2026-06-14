@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from backend.config import Settings
-from backend.domain.models import CommandPlan, CommandRequest
-from backend.services.llm_parser import LLMCommandParser, LLMUnavailableError
-from backend.services.validators import PlanValidator
+from backend.llm_parser import LLMCommandParser, LLMUnavailableError
+from backend.models import CommandPlan, CommandRequest
+from backend.validators import PlanValidator
 
 
 class CommandInterpreter:

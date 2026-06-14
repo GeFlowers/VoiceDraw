@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from backend.config import Settings, get_settings
-from backend.domain.models import CommandRequest
-from backend.services.interpreter_graph import CommandInterpreter
+from backend.interpreter_graph import CommandInterpreter
+from backend.models import CommandRequest
 
 
 class VoiceDrawApp:
@@ -16,7 +16,10 @@ class VoiceDrawApp:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         self.interpreter = CommandInterpreter(self.settings)
-        self.static_dir = Path(__file__).parent / "static"
+        project_root = Path(__file__).parent.parent
+        preferred_static_dir = project_root / "voicedraw" / "fronted"
+        fallback_static_dir = project_root / "fronted"
+        self.static_dir = preferred_static_dir if preferred_static_dir.exists() else fallback_static_dir
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         """根据 HTTP method/path 分发请求。"""

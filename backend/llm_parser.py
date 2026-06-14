@@ -9,7 +9,7 @@ import urllib.request
 from typing import Any
 
 from backend.config import Settings
-from backend.domain.models import CommandPlan, CommandRequest, DrawingOperation, OperationType, PlanSource, ShapeType
+from backend.models import CommandPlan, CommandRequest, DrawingOperation, OperationType, PlanSource, ShapeType
 
 
 class LLMUnavailableError(RuntimeError):
