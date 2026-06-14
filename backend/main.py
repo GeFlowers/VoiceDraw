@@ -33,9 +33,7 @@ class VoiceDrawApp:
         self.settings = settings or get_settings()
         self.interpreter = CommandInterpreter(self.settings)
         project_root = Path(__file__).parent.parent
-        preferred_static_dir = project_root / "voicedraw" / "fronted"
-        fallback_static_dir = project_root / "fronted"
-        self.static_dir = preferred_static_dir if preferred_static_dir.exists() else fallback_static_dir
+        self.static_dir = project_root / "fronted"
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         """根据 HTTP method/path 分发请求。"""
@@ -100,7 +98,7 @@ class VoiceDrawApp:
         return parsed
 
     async def _send_static(self, send: Any, path: str) -> None:
-        """返回静态文件，并阻止路径穿越访问 static 目录外的文件。"""
+        """返回前端静态文件，并阻止路径穿越访问 fronted 目录外的文件。"""
         relative = "index.html" if path in {"", "/"} else path.lstrip("/")
         target = (self.static_dir / relative).resolve()
         static_root = self.static_dir.resolve()

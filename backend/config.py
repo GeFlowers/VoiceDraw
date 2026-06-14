@@ -39,7 +39,6 @@ class Settings:
     llm_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
     enable_llm: bool = True
-    rule_confidence_threshold: float = 0.72
     llm_timeout_seconds: int = 8
 
     @property
@@ -63,6 +62,5 @@ def get_settings() -> Settings:
         llm_api_key=get("LLM_API_KEY", ""),
         llm_model=get("LLM_MODEL", "gpt-4o-mini"),
         enable_llm=_as_bool(get("ENABLE_LLM", "true"), True),
-        rule_confidence_threshold=float(get("RULE_CONFIDENCE_THRESHOLD", "0.72")),
         llm_timeout_seconds=int(get("LLM_TIMEOUT_SECONDS", "8")),
     )
