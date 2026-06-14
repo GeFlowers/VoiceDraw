@@ -10,7 +10,7 @@ VoiceDraw 是一个中文语音驱动的 AI 矢量绘图原型。项目目标是
 2. 使用 AI 理解自然语言，而不是本地关键词规则。
 3. 使用固定枚举约束 AI 输出，降低前端无法执行的风险。
 4. 使用 Canvas 渲染基础图形和矢量路径。
-5. 保持后端结构简单，便于阅读和继续扩展。
+5. 使用 FastAPI 保持后端结构简单，便于阅读和继续扩展。
 
 ## 3. 非目标
 
@@ -18,8 +18,7 @@ VoiceDraw 是一个中文语音驱动的 AI 矢量绘图原型。项目目标是
 2. 不实现账号系统。
 3. 不实现云端存储。
 4. 不实现完整专业矢量编辑器能力。
-5. 不实现文字输入测试入口。
-6. 不实现语音朗读反馈。
+5. 不实现语音朗读反馈。
 
 ## 4. 当前目录结构
 
@@ -44,6 +43,8 @@ VoiceDraw/
 
 ## 5. 后端设计
 
+后端使用 FastAPI 定义 HTTP 接口，Uvicorn 作为 ASGI 服务器负责运行应用。
+
 ### 5.1 `config.py`
 
 职责：
@@ -66,10 +67,10 @@ VoiceDraw/
 
 职责：
 
-1. 作为 ASGI 应用入口。
+1. 作为 FastAPI 应用入口。
 2. 提供 `/api/health`。
 3. 提供 `/api/commands/interpret`。
-4. 托管前端静态页面。
+4. 通过 FastAPI 静态文件挂载托管前端页面。
 5. 编排 AI 规划和计划校验流程。
 
 ### 5.4 `llm_parser.py`
@@ -147,49 +148,49 @@ AI 必须从以下枚举中生成计划：
 
 当前支持：
 
-1. `draw_shape`
-2. `draw_path`
-3. `add_text`
-4. `set_style`
-5. `set_background`
-6. `set_canvas_size`
-7. `select`
-8. `delete`
-9. `move`
-10. `resize`
-11. `rotate`
-12. `clear`
-13. `undo`
-14. `redo`
-15. `export`
-16. `announce`
-17. `no_op`
+1. `draw_shape`：绘制基础图形。
+2. `draw_path`：绘制自由矢量路径。
+3. `add_text`：添加文字对象。
+4. `set_style`：修改绘图样式。
+5. `set_background`：修改画布背景。
+6. `set_canvas_size`：修改画布尺寸。
+7. `select`：选择画布对象。
+8. `delete`：删除画布对象。
+9. `move`：移动画布对象。
+10. `resize`：缩放画布对象。
+11. `rotate`：旋转画布对象。
+12. `clear`：清空画布。
+13. `undo`：撤销上一步操作。
+14. `redo`：重做已撤销操作。
+15. `export`：导出画布。
+16. `announce`：只返回提示信息，不改变画布。
+17. `no_op`：无可执行操作。
 
 ### 7.2 图形类型
 
 当前支持：
 
-1. `path`
-2. `line`
-3. `arrow`
-4. `rectangle`
-5. `circle`
-6. `ellipse`
-7. `triangle`
-8. `diamond`
-9. `pentagon`
-10. `hexagon`
-11. `star`
-12. `heart`
-13. `flower`
-14. `cloud`
-15. `sun`
-16. `tree`
-17. `house`
-18. `mountain`
-19. `smile`
-20. `lightning`
-21. `text`
+1. `path`：自由路径。
+2. `line`：直线。
+3. `arrow`：箭头。
+4. `rectangle`：矩形。
+5. `circle`：圆形。
+6. `ellipse`：椭圆。
+7. `triangle`：三角形。
+8. `diamond`：菱形。
+9. `pentagon`：五边形。
+10. `hexagon`：六边形。
+11. `star`：星形。
+12. `heart`：爱心。
+13. `flower`：花朵。
+14. `cloud`：云朵。
+15. `sun`：太阳。
+16. `tree`：树。
+17. `house`：房子。
+18. `mountain`：山。
+19. `smile`：笑脸。
+20. `lightning`：闪电。
+21. `text`：文字。
 
 ### 7.3 路径命令
 
@@ -201,37 +202,9 @@ AI 必须从以下枚举中生成计划：
 4. `C`：三次贝塞尔曲线。
 5. `Z`：闭合路径。
 
-## 8. 执行流程
+## 8. 想实现但当前未实现的功能
 
-### 8.1 页面访问流程
-
-```text
-浏览器访问 /
-  -> backend/main.py
-  -> 查找前端目录
-  -> 返回 index.html
-```
-
-### 8.2 语音命令流程
-
-```text
-用户语音输入
-  -> 浏览器 Web Speech API
-  -> fronted/app.js
-  -> POST /api/commands/interpret
-  -> backend/main.py
-  -> CommandRequest
-  -> LLMCommandParser
-  -> AI API
-  -> CommandPlan
-  -> PlanValidator
-  -> JSON 返回前端
-  -> Canvas 执行 operations
-```
-
-## 9. 想实现但当前未实现的功能
-
-### 9.1 对象持久化保存
+### 8.1 对象持久化保存
 
 未实现内容：
 
@@ -243,7 +216,7 @@ AI 必须从以下枚举中生成计划：
 
 当前项目没有数据库、文件存储或用户系统。前端对象状态只保存在浏览器运行时内存中，刷新页面后会丢失。
 
-### 9.2 多用户和账号系统
+### 8.2 多用户和账号系统
 
 未实现内容：
 
@@ -256,7 +229,7 @@ AI 必须从以下枚举中生成计划：
 
 当前项目定位是本地单用户演示工具，后端没有认证、会话、数据库和用户模型。
 
-### 9.3 更完整的样式编辑
+### 8.3 更完整的样式编辑
 
 未实现内容：
 
@@ -271,7 +244,7 @@ AI 必须从以下枚举中生成计划：
 
 当前样式协议只包含 `stroke`、`fill`、`line_width`、`opacity`、`dashed`。复杂样式需要扩展后端模型、AI 输出协议和 Canvas 渲染逻辑。
 
-### 9.4 AI 结果可视化确认
+### 8.4 AI 结果可视化确认
 
 未实现内容：
 
@@ -284,7 +257,7 @@ AI 必须从以下枚举中生成计划：
 
 当前交互路径是 AI 返回后立即执行，没有中间确认态。实现该功能需要前端增加计划预览 UI 和操作队列管理。
 
-### 9.5 AI 失败重试和模型降级
+### 8.5 AI 失败重试和模型降级
 
 未实现内容：
 

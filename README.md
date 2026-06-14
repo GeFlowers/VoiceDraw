@@ -1,8 +1,10 @@
-# VoiceDraw
+# VoiceDraw说明文档
+
+## 0. DEMO视频链接
 
 ## 1. 项目简介
 
-VoiceDraw 是一个语音驱动的 AI 矢量绘图工具。用户通过中文语音描述想画什么或想怎样编辑画布，浏览器将语音识别结果提交给后端，后端调用 OpenAI-compatible AI API 生成结构化绘图计划，前端再根据计划在 HTML Canvas 上绘制。
+VoiceDraw 是一个语音驱动的 AI 矢量绘图工具。用户通过中文语音描述想画什么或想怎样编辑画布，浏览器将语音识别结果提交给 FastAPI 后端，后端调用 OpenAI-compatible AI API 生成结构化绘图计划，前端再根据计划在 HTML Canvas 上绘制。
 
 ## 2. 当前功能
 
@@ -76,7 +78,7 @@ VoiceDraw/
 ## 4. 环境要求
 
 1. Python 3.11 或更高版本。
-2. 可用的 OpenAI-compatible `/chat/completions` API。
+2. 可用的兼容OpenAI API。
 3. 支持 Web Speech API 的浏览器，建议使用最新版 Chrome 或 Edge。
 4. 浏览器需要允许麦克风权限。
 
@@ -112,6 +114,8 @@ https://api.openai.com/v1
 ```
 
 ## 7. 启动项目
+
+使用 Uvicorn 启动 FastAPI 应用：
 
 ```powershell
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
