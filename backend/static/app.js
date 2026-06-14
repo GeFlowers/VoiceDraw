@@ -1,6 +1,5 @@
 const canvas = document.querySelector("#drawingCanvas");
 const ctx = canvas.getContext("2d");
-const statusText = document.querySelector("#statusText");
 const signalText = document.querySelector("#signalText");
 const listenDot = document.querySelector("#listenDot");
 const transcriptText = document.querySelector("#transcriptText");
@@ -14,10 +13,13 @@ const sourceText = document.querySelector("#sourceText");
 const confidenceText = document.querySelector("#confidenceText");
 const latencyText = document.querySelector("#latencyText");
 const modelText = document.querySelector("#modelText");
-const plannerText = document.querySelector("#plannerText");
 const operationCountText = document.querySelector("#operationCountText");
 const historyCountText = document.querySelector("#historyCountText");
 const canvasSizeText = document.querySelector("#canvasSizeText");
+
+const DEFAULT_CANVAS_SIZE = { width: 1280, height: 720 };
+const MIN_CANVAS_SIZE = 240;
+const MAX_CANVAS_SIZE = 4096;
 
 const state = {
   objects: [],
@@ -25,7 +27,8 @@ const state = {
   undoStack: [],
   redoStack: [],
   background: "#fffefa",
-  viewport: { width: 1, height: 1 },
+  canvasSize: { ...DEFAULT_CANVAS_SIZE },
+  viewport: { ...DEFAULT_CANVAS_SIZE },
   processing: false,
   queue: [],
 };
@@ -55,25 +58,13 @@ function setStatus(kind, message) {
   if (kind) listenDot.classList.add(kind);
   document.body.dataset.state = kind || "idle";
   signalText.textContent = message;
-  statusText.textContent = message;
-}
-
-function speak(message) {
-  if (!message || !("speechSynthesis" in window)) return;
-  const utterance = new SpeechSynthesisUtterance(message);
-  utterance.lang = "zh-CN";
-  utterance.rate = 1.05;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
 }
 
 function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  state.viewport = {
-    width: Math.max(1, Math.floor(rect.width)),
-    height: Math.max(1, Math.floor(rect.height)),
-  };
+  state.viewport = { ...state.canvasSize };
+  canvas.style.setProperty("--canvas-width", String(state.canvasSize.width));
+  canvas.style.setProperty("--canvas-height", String(state.canvasSize.height));
   canvas.width = Math.floor(state.viewport.width * dpr);
   canvas.height = Math.floor(state.viewport.height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -118,7 +109,6 @@ function applyPlan(plan, transcript) {
   updateMetrics();
   updatePlanTelemetry(plan);
   addLog(transcript, plan.spoken_feedback || "指令已处理", plan);
-  speak(plan.spoken_feedback || "指令已处理");
 }
 
 function applyOperation(operation, planGroupId = null) {
@@ -919,7 +909,6 @@ function updatePlanTelemetry(plan) {
   operationCountText.textContent = String(operations.length);
   if (metadata.llm_latency_ms !== undefined) latencyText.textContent = `${metadata.llm_latency_ms} ms`;
   if (metadata.llm_model) modelText.textContent = metadata.llm_model;
-  if (metadata.planner) plannerText.textContent = metadata.planner;
 }
 
 function sourceLabel(source, metadata = {}) {
@@ -962,6 +951,7 @@ async function processQueue() {
   state.processing = true;
   while (state.queue.length) {
     const transcript = state.queue.shift();
+    if (tryApplyCanvasSizeCommand(transcript)) continue;
     setStatus("processing", "解析指令");
     try {
       const response = await fetch("/api/commands/interpret", {
@@ -991,7 +981,6 @@ async function processQueue() {
     } catch (error) {
       const message = `指令处理失败: ${error.message}`;
       addLog(transcript, message);
-      speak(message);
       setStatus("error", "处理失败");
     }
   }
@@ -1008,6 +997,44 @@ function getRecentGroupIds(limit) {
     if (ids.length >= limit) break;
   }
   return ids.reverse();
+}
+
+function parseCanvasSizeCommand(transcript) {
+  const text = transcript.replace(/\s+/g, "");
+  if (!/(画布|尺寸|大小|宽|高|分辨率)/.test(text)) return null;
+
+  let match = text.match(/(\d{3,4})\s*[xX×*乘]\s*(\d{3,4})/);
+  if (!match) {
+    match = text.match(/宽(?:度)?(?:设为|设置为|改成|改为|是|到)?(\d{3,4}).*高(?:度)?(?:设为|设置为|改成|改为|是|到)?(\d{3,4})/);
+  }
+  if (!match) {
+    match = text.match(/高(?:度)?(?:设为|设置为|改成|改为|是|到)?(\d{3,4}).*宽(?:度)?(?:设为|设置为|改成|改为|是|到)?(\d{3,4})/);
+    if (match) match = [match[0], match[2], match[1]];
+  }
+  if (!match) return null;
+
+  const width = Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Number(match[1])));
+  const height = Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Number(match[2])));
+  return { width, height };
+}
+
+function tryApplyCanvasSizeCommand(transcript) {
+  const size = parseCanvasSizeCommand(transcript);
+  if (!size) return false;
+  state.canvasSize = size;
+  resizeCanvas();
+  updateMetrics();
+  const feedback = `画布尺寸已设置为 ${size.width} x ${size.height}`;
+  confidenceText.textContent = "--";
+  operationCountText.textContent = "0";
+  addLog(transcript, feedback, {
+    source: "rule",
+    confidence: 1,
+    operations: [],
+    metadata: {},
+  });
+  setStatus(recognitionActive ? "listening" : "idle", recognitionActive ? "正在聆听" : "待命");
+  return true;
 }
 
 function initTextTesting() {
@@ -1027,12 +1054,6 @@ function initTextTesting() {
   }
 }
 
-function initQuickActions() {
-  document.querySelectorAll(".tool-rail button[data-command]").forEach((button) => {
-    button.addEventListener("click", () => enqueueTranscript(button.dataset.command || ""));
-  });
-}
-
 async function loadHealth() {
   try {
     const response = await fetch("/api/health");
@@ -1040,7 +1061,6 @@ async function loadHealth() {
     const health = await response.json();
     aiStatusText.textContent = health.llm_ready ? "已连接" : "未配置";
     modelText.textContent = health.llm_model || "--";
-    plannerText.textContent = health.planner_mode || "--";
     if (!health.llm_ready) {
       sourceText.textContent = "AI 未配置";
     }
@@ -1138,6 +1158,5 @@ document.addEventListener("visibilitychange", () => {
 resizeCanvas();
 updateMetrics();
 loadHealth();
-initQuickActions();
 initTextTesting();
 initVoice();

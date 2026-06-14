@@ -53,7 +53,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-rows: 74px minmax(0, 1fr);
+  grid-template-rows: 70px minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
 }
@@ -97,12 +97,6 @@ h1 {
   letter-spacing: 0;
 }
 
-.topbar p {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .system-strip {
   display: flex;
   align-items: center;
@@ -139,78 +133,16 @@ h1 {
 }
 
 .signal-card {
-  gap: 12px;
-  min-width: 190px;
-  padding: 0 12px;
-}
-
-.waveform {
-  display: inline-grid;
-  grid-template-columns: repeat(4, 4px);
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-}
-
-.waveform span {
-  width: 4px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--subtle);
-  opacity: 0.8;
-  transform-origin: center;
-}
-
-.waveform span:nth-child(2) {
-  height: 15px;
-}
-
-.waveform span:nth-child(3) {
-  height: 20px;
-}
-
-.waveform span:nth-child(4) {
-  height: 12px;
-}
-
-body[data-state="listening"] .waveform span,
-body[data-state="processing"] .waveform span {
-  background: var(--teal);
-  opacity: 1;
-  animation: equalize 0.9s ease-in-out infinite;
-}
-
-body[data-state="processing"] .waveform span {
-  background: var(--blue);
-}
-
-.waveform span:nth-child(2) {
-  animation-delay: 0.08s;
-}
-
-.waveform span:nth-child(3) {
-  animation-delay: 0.16s;
-}
-
-.waveform span:nth-child(4) {
-  animation-delay: 0.24s;
-}
-
-@keyframes equalize {
-  0%,
-  100% {
-    transform: scaleY(0.56);
-  }
-  50% {
-    transform: scaleY(1.18);
-  }
+  gap: 8px;
+  min-width: 104px;
+  padding: 0 10px;
 }
 
 .signal {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  min-width: 110px;
+  min-width: 80px;
   gap: 9px;
   color: var(--muted);
   font-size: 13px;
@@ -252,42 +184,8 @@ body[data-state="processing"] .waveform span {
 
 .workspace {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 356px;
+  grid-template-columns: minmax(0, 1fr) 356px;
   min-height: 0;
-}
-
-.tool-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 8px;
-  border-right: 1px solid var(--line);
-  background: rgba(13, 15, 14, 0.66);
-}
-
-.tool-rail button {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--muted);
-  background: var(--panel);
-  font-size: 20px;
-  transition:
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease,
-    background 160ms ease;
-}
-
-.tool-rail button:hover {
-  border-color: rgba(30, 200, 165, 0.55);
-  color: var(--ink);
-  background: #24302c;
-  transform: translateY(-1px);
 }
 
 .canvas-stage {
@@ -333,8 +231,12 @@ body[data-state="processing"] .waveform span {
 
 #drawingCanvas {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: min(100%, calc(var(--canvas-width, 1280) * 1px));
+  height: auto;
+  max-height: 100%;
+  aspect-ratio: var(--canvas-width, 1280) / var(--canvas-height, 720);
+  justify-self: center;
+  align-self: center;
   min-height: 0;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 8px;
@@ -589,11 +491,11 @@ body[data-state="processing"] .waveform span {
   }
 
   .signal-card {
-    min-width: 148px;
+    min-width: 104px;
   }
 
   .workspace {
-    grid-template-columns: 50px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) 290px;
   }
 
@@ -637,14 +539,7 @@ body[data-state="processing"] .waveform span {
 
   .workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 460px auto;
-  }
-
-  .tool-rail {
-    flex-direction: row;
-    justify-content: center;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    grid-template-rows: 460px auto;
   }
 
   .canvas-stage {

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Voice Draw Studio</title>
+    <title>VoiceDraw</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -12,8 +12,7 @@
         <div class="brand-block">
           <span class="brand-mark" aria-hidden="true">VD</span>
           <div>
-            <h1>Voice Draw Studio</h1>
-            <p id="statusText">初始化语音引擎</p>
+            <h1>VoiceDraw</h1>
           </div>
         </div>
 
@@ -27,12 +26,6 @@
             <strong id="sourceText">--</strong>
           </div>
           <div class="signal-card">
-            <div class="waveform" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
             <div class="signal">
               <span id="listenDot" class="dot"></span>
               <span id="signalText">准备中</span>
@@ -42,13 +35,6 @@
       </header>
 
       <main class="workspace">
-        <nav class="tool-rail" aria-label="快捷操作">
-          <button type="button" data-command="撤销" title="撤销" aria-label="撤销">↶</button>
-          <button type="button" data-command="重做" title="重做" aria-label="重做">↷</button>
-          <button type="button" data-command="清空画布" title="清空画布" aria-label="清空画布">⌫</button>
-          <button type="button" data-command="导出图片" title="导出图片" aria-label="导出图片">⇩</button>
-        </nav>
-
         <section class="canvas-stage" aria-label="绘图画布">
           <div class="canvas-bar">
             <div>
@@ -95,10 +81,6 @@
               <div>
                 <dt>模型</dt>
                 <dd id="modelText">--</dd>
-              </div>
-              <div>
-                <dt>规划器</dt>
-                <dd id="plannerText">--</dd>
               </div>
               <div>
                 <dt>操作数</dt>
