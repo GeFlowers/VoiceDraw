@@ -6,8 +6,6 @@ const transcriptText = document.querySelector("#transcriptText");
 const activityLog = document.querySelector("#activityLog");
 const objectCount = document.querySelector("#objectCount");
 const selectionCount = document.querySelector("#selectionCount");
-const testCommandForm = document.querySelector("#testCommandForm");
-const testCommandInput = document.querySelector("#testCommandInput");
 const aiStatusText = document.querySelector("#aiStatusText");
 const confidenceText = document.querySelector("#confidenceText");
 const latencyText = document.querySelector("#latencyText");
@@ -52,6 +50,9 @@ let recognitionActive = false;
 let restartTimer = null;
 let voiceBlocked = false;
 let voiceRestarting = false;
+let recognitionSessionId = 0;
+let lastSubmittedTranscript = "";
+let lastSubmittedAt = 0;
 
 function setStatus(kind, message) {
   listenDot.classList.remove("listening", "processing", "error");
@@ -1012,23 +1013,6 @@ function setCanvasSizeFromOperation(operation) {
   updateMetrics();
 }
 
-function initTextTesting() {
-  testCommandForm?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const command = testCommandInput.value.trim();
-    if (!command) return;
-    testCommandInput.value = "";
-    await enqueueTranscript(command);
-  });
-
-  const params = new URLSearchParams(window.location.search);
-  const testCommand = params.get("test");
-  if (testCommand) {
-    testCommandInput.value = testCommand;
-    window.setTimeout(() => enqueueTranscript(testCommand), 250);
-  }
-}
-
 async function loadHealth() {
   try {
     const response = await fetch("/api/health");
@@ -1056,19 +1040,24 @@ function initVoice() {
 function createRecognition() {
   if (!SpeechRecognitionCtor) return;
 
+  const sessionId = recognitionSessionId + 1;
+  recognitionSessionId = sessionId;
   recognition = new SpeechRecognitionCtor();
   recognition.lang = "zh-CN";
-  recognition.continuous = true;
+  recognition.continuous = false;
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
+    if (sessionId !== recognitionSessionId) return;
     recognitionActive = true;
     voiceRestarting = false;
     setStatus("listening", "正在聆听");
   };
 
   recognition.onerror = (event) => {
+    if (sessionId !== recognitionSessionId) return;
+    recognitionActive = false;
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       voiceBlocked = true;
     }
@@ -1076,11 +1065,14 @@ function createRecognition() {
   };
 
   recognition.onend = () => {
+    if (sessionId !== recognitionSessionId) return;
     recognitionActive = false;
+    recognition = null;
     scheduleListeningRestart();
   };
 
   recognition.onresult = (event) => {
+    if (sessionId !== recognitionSessionId) return;
     let finalTranscript = "";
     let interimTranscript = "";
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -1092,9 +1084,45 @@ function createRecognition() {
       }
     }
     if (interimTranscript) transcriptText.textContent = interimTranscript;
-    if (finalTranscript) enqueueTranscript(finalTranscript);
+    if (finalTranscript) {
+      const normalized = finalTranscript.trim();
+      if (!shouldSkipDuplicateTranscript(normalized)) {
+        stopRecognitionForProcessing();
+        enqueueTranscript(normalized);
+      }
+    }
   };
 
+}
+
+function shouldSkipDuplicateTranscript(transcript) {
+  if (!transcript) return true;
+  const now = Date.now();
+  const isDuplicate = transcript === lastSubmittedTranscript && now - lastSubmittedAt < 1500;
+  lastSubmittedTranscript = transcript;
+  lastSubmittedAt = now;
+  return isDuplicate;
+}
+
+function stopRecognitionForProcessing() {
+  recognitionSessionId += 1;
+  recognitionActive = false;
+  clearTimeout(restartTimer);
+  if (!recognition) return;
+  const currentRecognition = recognition;
+  recognition = null;
+  try {
+    currentRecognition.onend = null;
+    currentRecognition.onerror = null;
+    currentRecognition.onresult = null;
+    currentRecognition.stop();
+  } catch {
+    try {
+      currentRecognition.abort();
+    } catch {
+      // Browser speech implementations can throw while already stopping.
+    }
+  }
 }
 
 function startListening() {
@@ -1129,5 +1157,4 @@ document.addEventListener("visibilitychange", () => {
 resizeCanvas();
 updateMetrics();
 loadHealth();
-initTextTesting();
 initVoice();

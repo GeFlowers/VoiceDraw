@@ -103,7 +103,6 @@ class LLMCommandParser:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._dependency_error: str | None = None
 
     @property
     def is_configured(self) -> bool:
@@ -116,47 +115,81 @@ class LLMCommandParser:
             raise LLMUnavailableError("LLM_BASE_URL or LLM_API_KEY is not configured.")
 
         endpoint = self._completion_url()
-        payload = self._build_payload(request)
         started_at = time.perf_counter()
-        print(
-            f"[voice-draw] ai_api_call_started model={self.settings.llm_model} endpoint={self._redact_endpoint(endpoint)}",
-            flush=True,
-        )
+        failures: list[str] = []
+        max_attempts = self.settings.llm_max_retries + 1
+
+        for model in self.settings.llm_model_chain:
+            for attempt in range(1, max_attempts + 1):
+                print(
+                    "[voice-draw] ai_api_call_started "
+                    f"model={model} attempt={attempt}/{max_attempts} endpoint={self._redact_endpoint(endpoint)}",
+                    flush=True,
+                )
+                try:
+                    response_data = self._request_completion(endpoint, request, model)
+                    plan = self._parse_response_plan(response_data)
+                except LLMUnavailableError as exc:
+                    failure = f"{model} attempt {attempt}/{max_attempts}: {exc}"
+                    failures.append(failure)
+                    print(f"[voice-draw] ai_api_call_failed {failure}", flush=True)
+                    continue
+
+                latency_ms = round((time.perf_counter() - started_at) * 1000)
+                metadata = {
+                    **plan.metadata,
+                    "llm_attempted": True,
+                    "llm_model": model,
+                    "llm_model_chain": list(self.settings.llm_model_chain),
+                    "llm_attempt_count": len(failures) + 1,
+                    "llm_latency_ms": latency_ms,
+                    "planner": "ai_enum_vector_planner",
+                }
+                print(
+                    f"[voice-draw] ai_api_call_completed model={model} attempts={len(failures) + 1} "
+                    f"latency_ms={latency_ms}",
+                    flush=True,
+                )
+                return plan.model_copy(update={"source": PlanSource.LLM, "metadata": metadata})
+
+        joined_failures = " | ".join(failures[-6:])
+        raise LLMUnavailableError(f"AI API failed after model fallback attempts: {joined_failures}")
+
+    def _request_completion(self, endpoint: str, request: CommandRequest, model: str) -> dict[str, Any]:
+        """按指定模型发起一次 Chat Completions 请求。"""
+        payload = self._build_payload(request, model)
         try:
-            response_data = self._post_json(endpoint, payload)
+            return self._post_json(endpoint, payload)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:1200]
             if exc.code == 400 and "response_format" in detail:
                 # 兼容不支持 response_format 的 OpenAI 风格代理服务。
                 payload.pop("response_format", None)
-                response_data = self._post_json(endpoint, payload)
-            else:
-                raise LLMUnavailableError(f"AI API returned HTTP {exc.code}: {detail}") from exc
+                try:
+                    return self._post_json(endpoint, payload)
+                except urllib.error.HTTPError as retry_exc:
+                    retry_detail = retry_exc.read().decode("utf-8", errors="replace")[:1200]
+                    raise LLMUnavailableError(f"AI API returned HTTP {retry_exc.code}: {retry_detail}") from retry_exc
+            raise LLMUnavailableError(f"AI API returned HTTP {exc.code}: {detail}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise LLMUnavailableError(f"AI API request failed: {exc}") from exc
 
-        latency_ms = round((time.perf_counter() - started_at) * 1000)
-        content = self._extract_message_content(response_data)
-        plan_data = self._extract_plan_json(content)
-        # 对模型可能输出的驼峰字段、额外字段和缺省字段做一次收敛。
-        plan_data = self._normalize_plan_data(plan_data)
+    def _parse_response_plan(self, response_data: dict[str, Any]) -> CommandPlan:
+        """把 Chat Completions 响应转换为领域绘图计划。"""
+        try:
+            content = self._extract_message_content(response_data)
+            plan_data = self._extract_plan_json(content)
+            # 对模型可能输出的驼峰字段、额外字段和缺省字段做一次收敛。
+            plan_data = self._normalize_plan_data(plan_data)
+        except json.JSONDecodeError as exc:
+            raise LLMUnavailableError(f"AI returned malformed JSON: {exc}") from exc
 
         try:
-            plan = CommandPlan(**plan_data)
+            return CommandPlan(**plan_data)
         except Exception as exc:
             raise LLMUnavailableError(f"AI returned an invalid command plan: {exc}") from exc
 
-        metadata = {
-            **plan.metadata,
-            "llm_attempted": True,
-            "llm_model": self.settings.llm_model,
-            "llm_latency_ms": latency_ms,
-            "planner": "ai_enum_vector_planner",
-        }
-        print(f"[voice-draw] ai_api_call_completed latency_ms={latency_ms}", flush=True)
-        return plan.model_copy(update={"source": PlanSource.LLM, "metadata": metadata})
-
-    def _build_payload(self, request: CommandRequest) -> dict[str, Any]:
+    def _build_payload(self, request: CommandRequest, model: str) -> dict[str, Any]:
         """组装 Chat Completions 请求体。"""
         user_payload = {
             "transcript": request.transcript,
@@ -168,7 +201,7 @@ class LLMCommandParser:
             "enum_catalog": ENUM_CATALOG,
         }
         return {
-            "model": self.settings.llm_model,
+            "model": model,
             "temperature": 0.15,
             # 优先要求模型以 JSON 对象返回，若代理不支持会在 parse 中降级重试。
             "response_format": {"type": "json_object"},
@@ -194,7 +227,10 @@ class LLMCommandParser:
         )
         with urllib.request.urlopen(request, timeout=self.settings.llm_timeout_seconds) as response:
             raw = response.read().decode("utf-8")
-        parsed = json.loads(raw)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise LLMUnavailableError(f"AI API response body is not valid JSON: {exc}") from exc
         if not isinstance(parsed, dict):
             raise LLMUnavailableError("AI API response body is not a JSON object.")
         return parsed

@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class OperationType(str, Enum):
@@ -66,8 +66,6 @@ TargetSelector = Literal["selected", "last", "all", "none"]
 
 class VoiceDrawModel(BaseModel):
     """项目领域模型基类，使用 Pydantic 负责校验、复制和序列化。"""
-
-    model_config = ConfigDict()
 
     def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """默认输出 JSON 友好的 dict，保持原 API 调用方式不变。"""
@@ -235,19 +233,6 @@ class CommandRequest(VoiceDrawModel):
     def _normalize_ids(cls, value: list[Any]) -> list[str]:
         """对象 id 统一转成字符串，便于前后端比较。"""
         return [str(item) for item in value]
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> CommandRequest:
-        """从 HTTP JSON 对象构造请求模型，并补齐默认值。"""
-        return cls(
-            transcript=data.get("transcript", ""),
-            locale=data.get("locale", "zh-CN"),
-            canvas_width=data.get("canvas_width", 1280),
-            canvas_height=data.get("canvas_height", 720),
-            selected_ids=data.get("selected_ids") or [],
-            recent_object_ids=data.get("recent_object_ids") or [],
-        )
-
 
 class CommandPlan(VoiceDrawModel):
     """完整的命令解释结果，包含动作列表、置信度和给用户的反馈。"""
