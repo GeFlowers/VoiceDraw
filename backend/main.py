@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,9 @@ from backend.config import Settings, get_settings
 from backend.llm_parser import LLMCommandParser, LLMUnavailableError
 from backend.models import CommandPlan, CommandRequest
 from backend.validators import PlanValidator
+
+
+logger = logging.getLogger(__name__)
 
 
 class CommandInterpreter:
@@ -33,7 +37,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     interpreter = CommandInterpreter(resolved_settings)
     project_root = Path(__file__).parent.parent
-    static_dir = project_root / "fronted"
+    static_dir = project_root / "frontend"
 
     app = FastAPI(title="VoiceDraw API")
     app.add_middleware(
@@ -63,9 +67,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except LLMUnavailableError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            logger.warning("LLM command interpretation failed: %s", exc)
+            raise HTTPException(status_code=502, detail="AI 服务暂时不可用，请稍后重试。") from exc
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Internal server error: {exc}") from exc
+            logger.exception("Unexpected command interpretation error")
+            raise HTTPException(status_code=500, detail="服务器处理指令时发生错误。") from exc
 
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
     return app

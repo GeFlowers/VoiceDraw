@@ -103,7 +103,6 @@ class LLMCommandParser:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._dependency_error: str | None = None
 
     @property
     def is_configured(self) -> bool:
