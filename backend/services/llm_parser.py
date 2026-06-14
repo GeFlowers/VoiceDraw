@@ -13,9 +13,12 @@ from backend.domain.models import CommandPlan, CommandRequest, DrawingOperation,
 
 
 class LLMUnavailableError(RuntimeError):
+    """LLM 调用失败或返回内容不可用时抛出的统一异常。"""
+
     pass
 
 
+# 提供给模型的输出结构示例，用于约束绘图计划字段和取值。
 PLAN_SCHEMA_HINT = {
     "operations": [
         {
@@ -45,6 +48,7 @@ PLAN_SCHEMA_HINT = {
 }
 
 
+# 系统提示词要求模型只输出 JSON，并鼓励复杂物体拆成矢量路径组合。
 SYSTEM_PROMPT = f"""
 你是 Voice Draw 的 AI 命令规划器。你的任务不是做关键词匹配，而是把中文语音指令理解成可执行的矢量绘图计划。
 
@@ -64,15 +68,19 @@ JSON 结构参考：
 
 
 class LLMCommandParser:
+    """调用 OpenAI 兼容的 Chat Completions 接口生成绘图计划。"""
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._dependency_error: str | None = None
 
     @property
     def is_configured(self) -> bool:
+        """检查当前配置是否足够发起 LLM 请求。"""
         return self.settings.llm_ready
 
     def parse(self, request: CommandRequest, normalized_text: str) -> CommandPlan:
+        """发送语音上下文到 LLM，并把返回 JSON 转成 CommandPlan。"""
         if not self.is_configured:
             raise LLMUnavailableError("LLM_BASE_URL or LLM_API_KEY is not configured.")
 
@@ -88,6 +96,7 @@ class LLMCommandParser:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:1200]
             if exc.code == 400 and "response_format" in detail:
+                # 兼容不支持 response_format 的 OpenAI 风格代理服务。
                 payload.pop("response_format", None)
                 response_data = self._post_json(endpoint, payload)
             else:
@@ -98,6 +107,7 @@ class LLMCommandParser:
         latency_ms = round((time.perf_counter() - started_at) * 1000)
         content = self._extract_message_content(response_data)
         plan_data = self._extract_plan_json(content)
+        # 对模型可能输出的驼峰字段、额外字段和缺省字段做一次收敛。
         plan_data = self._normalize_plan_data(plan_data)
 
         try:
@@ -116,6 +126,7 @@ class LLMCommandParser:
         return plan.model_copy(update={"source": PlanSource.LLM, "metadata": metadata})
 
     def _build_payload(self, request: CommandRequest, normalized_text: str) -> dict[str, Any]:
+        """组装 Chat Completions 请求体。"""
         user_payload = {
             "transcript": request.transcript,
             "normalized_text": normalized_text,
@@ -128,6 +139,7 @@ class LLMCommandParser:
         return {
             "model": self.settings.llm_model,
             "temperature": 0.15,
+            # 优先要求模型以 JSON 对象返回，若代理不支持会在 parse 中降级重试。
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -136,6 +148,7 @@ class LLMCommandParser:
         }
 
     def _post_json(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """发送 JSON 请求并确保响应体也是 JSON 对象。"""
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
             endpoint,
@@ -156,6 +169,7 @@ class LLMCommandParser:
         return parsed
 
     def _completion_url(self) -> str:
+        """把用户配置的 base URL 标准化为 chat/completions endpoint。"""
         base = self.settings.llm_base_url.strip().rstrip("/")
         parsed = urllib.parse.urlparse(base)
         path = parsed.path.rstrip("/")
@@ -169,11 +183,13 @@ class LLMCommandParser:
 
     @staticmethod
     def _redact_endpoint(endpoint: str) -> str:
+        """日志中只保留 endpoint 的协议、域名和路径，避免泄露查询参数。"""
         parsed = urllib.parse.urlparse(endpoint)
         return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
 
     @staticmethod
     def _extract_message_content(response_data: dict[str, Any]) -> str:
+        """兼容普通文本 content 和部分代理返回的 content 列表。"""
         try:
             content = response_data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
@@ -186,6 +202,7 @@ class LLMCommandParser:
 
     @staticmethod
     def _extract_plan_json(content: str) -> dict[str, Any]:
+        """从模型文本中提取 JSON 对象，容忍 markdown 代码块包裹。"""
         cleaned = content.strip()
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
@@ -203,6 +220,7 @@ class LLMCommandParser:
 
     @staticmethod
     def _normalize_plan_data(plan_data: dict[str, Any]) -> dict[str, Any]:
+        """过滤未知字段，并把常见 LLM 输出变体修正为领域模型字段。"""
         allowed_plan_keys = {
             "operations",
             "confidence",
@@ -213,6 +231,7 @@ class LLMCommandParser:
         }
         operations = plan_data.get("operations")
         if not isinstance(operations, list):
+            # 没有操作列表时生成 no_op，交给上层展示可理解的失败反馈。
             plan_data["operations"] = [
                 DrawingOperation(
                     type=OperationType.NO_OP,
@@ -244,6 +263,7 @@ class LLMCommandParser:
             style = operation.get("style")
             if isinstance(style, dict) and "lineWidth" in style and "line_width" not in style:
                 style["line_width"] = style.pop("lineWidth")
+            # 兼容前端或模型常见的 camelCase 动作名。
             if operation.get("type") == "drawPath":
                 operation["type"] = "draw_path"
             if operation.get("type") == "addText":

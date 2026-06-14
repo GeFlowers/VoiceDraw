@@ -9,6 +9,8 @@ from backend.services.validators import PlanValidator
 
 
 class CommandInterpreter:
+    """命令解释编排器，负责在 LLM、规则兜底和计划校验之间串联流程。"""
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.rule_parser = RuleBasedParser()
@@ -16,11 +18,14 @@ class CommandInterpreter:
         self.validator = PlanValidator()
 
     def interpret(self, request: CommandRequest) -> CommandPlan:
+        """优先调用 LLM 生成矢量计划，失败时退回本地规则解析。"""
         normalized_text = normalize_text(request.transcript)
         if self.llm_parser.is_configured:
             try:
+                # LLM 返回的计划也必须经过统一校验，避免前端收到非法动作。
                 return self.validator.validate(self.llm_parser.parse(request, normalized_text))
             except (LLMUnavailableError, Exception) as exc:
+                # AI 服务不可用时保留错误信息，并使用规则解析保障基本可用性。
                 fallback = self.rule_parser.parse(request)
                 metadata = {
                     **fallback.metadata,
@@ -39,6 +44,7 @@ class CommandInterpreter:
                     )
                 )
 
+        # 当前产品策略要求 AI 可用时才执行语音绘图，避免静默使用低置信规则结果。
         plan = CommandPlan(
             operations=[
                 DrawingOperation(

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import Any, Literal
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 
 class OperationType(str, Enum):
+    """前端画布能够执行的动作类型。"""
+
     DRAW_SHAPE = "draw_shape"
     DRAW_PATH = "draw_path"
     ADD_TEXT = "add_text"
@@ -26,6 +28,8 @@ class OperationType(str, Enum):
 
 
 class ShapeType(str, Enum):
+    """后端计划中支持的图形类型。"""
+
     PATH = "path"
     LINE = "line"
     ARROW = "arrow"
@@ -50,73 +54,68 @@ class ShapeType(str, Enum):
 
 
 class PlanSource(str, Enum):
+    """标记绘图计划来自规则解析、LLM，还是经过修复后的结果。"""
+
     RULE = "rule"
     LLM = "llm"
     REPAIRED = "repaired"
 
 
+# 操作对象选择器，和前端画布的选中态约定保持一致。
 TargetSelector = Literal["selected", "last", "all", "none"]
 
 
-class ModelMixin:
-    def model_copy(self, *, update: dict[str, Any] | None = None) -> Any:
-        copied = deepcopy(self)
-        for key, value in (update or {}).items():
-            setattr(copied, key, value)
-        return copied
+class VoiceDrawModel(BaseModel):
+    """项目领域模型基类，使用 Pydantic 负责校验、复制和序列化。"""
 
-    def model_dump(self) -> dict[str, Any]:
-        return _to_jsonable(self)
+    model_config = ConfigDict()
 
-
-def _enum_value(enum_type: type[Enum], value: Any) -> Any:
-    if value is None or isinstance(value, enum_type):
-        return value
-    return enum_type(value)
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        """默认输出 JSON 友好的 dict，保持原 API 调用方式不变。"""
+        kwargs.setdefault("mode", "json")
+        return super().model_dump(**kwargs)
 
 
 def _clamp(value: float, min_value: float, max_value: float) -> float:
+    """把数值限制在前后端共同约定的安全范围内。"""
     return max(min_value, min(max_value, value))
 
 
-def _to_jsonable(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    if is_dataclass(value):
-        return {item.name: _to_jsonable(getattr(value, item.name)) for item in fields(value)}
-    if isinstance(value, list):
-        return [_to_jsonable(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _to_jsonable(item) for key, item in value.items()}
-    return value
+class DrawingStyle(VoiceDrawModel):
+    """单个绘图动作使用的描边、填充和透明度样式。"""
 
-
-@dataclass
-class DrawingStyle(ModelMixin):
     stroke: str | None = "#1f2937"
     fill: str | None = None
     line_width: float = 4.0
     opacity: float = 1.0
     dashed: bool = False
 
-    def __post_init__(self) -> None:
-        self.stroke = self._normalize_color(self.stroke)
-        self.fill = self._normalize_color(self.fill)
-        self.line_width = _clamp(float(self.line_width), 0.5, 48.0)
-        self.opacity = _clamp(float(self.opacity), 0.05, 1.0)
-        self.dashed = bool(self.dashed)
-
-    @staticmethod
-    def _normalize_color(value: str | None) -> str | None:
+    @field_validator("stroke", "fill")
+    @classmethod
+    def _normalize_color(cls, value: str | None) -> str | None:
+        """只接受短/长十六进制颜色，透明填充用 None 表示。"""
         if value is None:
             return None
         if not isinstance(value, str) or not value.startswith("#") or len(value) not in {4, 7}:
             raise ValueError("color must be a hex value such as #ff0000")
         return value.lower()
 
+    @field_validator("line_width")
+    @classmethod
+    def _clamp_line_width(cls, value: float) -> float:
+        """线宽限制在前端可稳定渲染的范围内。"""
+        return _clamp(float(value), 0.5, 48.0)
 
-@dataclass
-class Geometry(ModelMixin):
+    @field_validator("opacity")
+    @classmethod
+    def _clamp_opacity(cls, value: float) -> float:
+        """透明度限制在可见范围内。"""
+        return _clamp(float(value), 0.05, 1.0)
+
+
+class Geometry(VoiceDrawModel):
+    """归一化画布坐标和尺寸，所有值按 0 到 1 表示。"""
+
     x: float | None = None
     y: float | None = None
     x2: float | None = None
@@ -125,21 +124,28 @@ class Geometry(ModelMixin):
     height: float | None = None
     radius: float | None = None
 
-    def __post_init__(self) -> None:
-        for key in ("x", "y", "x2", "y2"):
-            value = getattr(self, key)
-            if value is not None:
-                setattr(self, key, _clamp(float(value), 0.0, 1.0))
-        for key in ("width", "height"):
-            value = getattr(self, key)
-            if value is not None:
-                setattr(self, key, _clamp(float(value), 0.01, 1.0))
-        if self.radius is not None:
-            self.radius = _clamp(float(self.radius), 0.01, 0.6)
+    @field_validator("x", "y", "x2", "y2")
+    @classmethod
+    def _clamp_coordinate(cls, value: float | None) -> float | None:
+        """坐标在入模时裁剪，防止 LLM 或规则解析返回越界值。"""
+        return None if value is None else _clamp(float(value), 0.0, 1.0)
+
+    @field_validator("width", "height")
+    @classmethod
+    def _clamp_size(cls, value: float | None) -> float | None:
+        """尺寸需要保留最小可见值。"""
+        return None if value is None else _clamp(float(value), 0.01, 1.0)
+
+    @field_validator("radius")
+    @classmethod
+    def _clamp_radius(cls, value: float | None) -> float | None:
+        """半径限制在画布相对尺寸范围内。"""
+        return None if value is None else _clamp(float(value), 0.01, 0.6)
 
 
-@dataclass
-class PathCommand(ModelMixin):
+class PathCommand(VoiceDrawModel):
+    """矢量路径中的单条绘制指令。"""
+
     command: str
     x: float | None = None
     y: float | None = None
@@ -148,76 +154,92 @@ class PathCommand(ModelMixin):
     x2: float | None = None
     y2: float | None = None
 
-    def __post_init__(self) -> None:
-        self.command = str(self.command).upper()
-        if self.command not in {"M", "L", "Q", "C", "Z"}:
+    @field_validator("command")
+    @classmethod
+    def _normalize_command(cls, value: str) -> str:
+        """前端只实现了这五类路径命令，其他命令在模型层直接拒绝。"""
+        command = str(value).upper()
+        if command not in {"M", "L", "Q", "C", "Z"}:
             raise ValueError("path command must be one of M, L, Q, C, Z")
-        for key in ("x", "y", "x1", "y1", "x2", "y2"):
-            value = getattr(self, key)
-            if value is not None:
-                setattr(self, key, _clamp(float(value), 0.0, 1.0))
+        return command
+
+    @field_validator("x", "y", "x1", "y1", "x2", "y2")
+    @classmethod
+    def _clamp_coordinate(cls, value: float | None) -> float | None:
+        """路径坐标使用归一化画布坐标。"""
+        return None if value is None else _clamp(float(value), 0.0, 1.0)
 
 
-@dataclass
-class Vector(ModelMixin):
+class Vector(VoiceDrawModel):
+    """移动操作使用的二维偏移量。"""
+
     dx: float = 0
     dy: float = 0
 
-    def __post_init__(self) -> None:
-        self.dx = _clamp(float(self.dx), -1.0, 1.0)
-        self.dy = _clamp(float(self.dy), -1.0, 1.0)
+    @field_validator("dx", "dy")
+    @classmethod
+    def _clamp_delta(cls, value: float) -> float:
+        """偏移量同样使用归一化坐标，限制在单个画布范围内。"""
+        return _clamp(float(value), -1.0, 1.0)
 
 
-@dataclass
-class DrawingOperation(ModelMixin):
+class DrawingOperation(VoiceDrawModel):
+    """一条可执行的画布操作，是后端传给前端的最小动作单位。"""
+
     type: OperationType
     shape: ShapeType | None = None
     target: TargetSelector | None = None
-    style: DrawingStyle | dict[str, Any] | None = None
-    geometry: Geometry | dict[str, Any] | None = None
+    style: DrawingStyle | None = None
+    geometry: Geometry | None = None
     text: str | None = None
     value: str | None = None
     amount: float | None = None
-    delta: Vector | dict[str, Any] | None = None
-    path: list[PathCommand | dict[str, Any]] | None = None
+    delta: Vector | None = None
+    path: list[PathCommand] | None = None
     group_id: str | None = None
     description: str = ""
 
-    def __post_init__(self) -> None:
-        self.type = _enum_value(OperationType, self.type)
-        self.shape = _enum_value(ShapeType, self.shape)
-        if isinstance(self.style, dict):
-            self.style = DrawingStyle(**self.style)
-        if isinstance(self.geometry, dict):
-            self.geometry = Geometry(**self.geometry)
-        if isinstance(self.delta, dict):
-            self.delta = Vector(**self.delta)
-        if self.path is not None:
-            self.path = [item if isinstance(item, PathCommand) else PathCommand(**item) for item in self.path]
 
+class CommandRequest(VoiceDrawModel):
+    """前端提交的语音命令请求。"""
 
-@dataclass
-class CommandRequest(ModelMixin):
     transcript: str
     locale: str = "zh-CN"
     canvas_width: int = 1280
     canvas_height: int = 720
-    selected_ids: list[str] = field(default_factory=list)
-    recent_object_ids: list[str] = field(default_factory=list)
+    selected_ids: list[str] = Field(default_factory=list)
+    recent_object_ids: list[str] = Field(default_factory=list)
 
-    def __post_init__(self) -> None:
-        self.transcript = str(self.transcript).strip()
-        if not self.transcript:
+    @field_validator("transcript")
+    @classmethod
+    def _normalize_transcript(cls, value: str) -> str:
+        """请求边界处做轻量清洗，避免空文本进入解析器。"""
+        transcript = str(value).strip()
+        if not transcript:
             raise ValueError("transcript is required")
-        self.transcript = self.transcript[:2000]
-        self.locale = str(self.locale or "zh-CN")
-        self.canvas_width = max(100, min(10000, int(self.canvas_width)))
-        self.canvas_height = max(100, min(10000, int(self.canvas_height)))
-        self.selected_ids = [str(item) for item in self.selected_ids]
-        self.recent_object_ids = [str(item) for item in self.recent_object_ids]
+        return transcript[:2000]
+
+    @field_validator("locale")
+    @classmethod
+    def _normalize_locale(cls, value: str | None) -> str:
+        """缺省语言环境保持中文。"""
+        return str(value or "zh-CN")
+
+    @field_validator("canvas_width", "canvas_height")
+    @classmethod
+    def _clamp_canvas_size(cls, value: int) -> int:
+        """限制异常画布尺寸进入解析器。"""
+        return max(100, min(10000, int(value)))
+
+    @field_validator("selected_ids", "recent_object_ids")
+    @classmethod
+    def _normalize_ids(cls, value: list[Any]) -> list[str]:
+        """对象 id 统一转成字符串，便于前后端比较。"""
+        return [str(item) for item in value]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CommandRequest:
+        """从 HTTP JSON 对象构造请求模型，并补齐默认值。"""
         return cls(
             transcript=data.get("transcript", ""),
             locale=data.get("locale", "zh-CN"),
@@ -228,23 +250,31 @@ class CommandRequest(ModelMixin):
         )
 
 
-@dataclass
-class CommandPlan(ModelMixin):
-    operations: list[DrawingOperation | dict[str, Any]] = field(default_factory=list)
+class CommandPlan(VoiceDrawModel):
+    """完整的命令解释结果，包含动作列表、置信度和给用户的反馈。"""
+
+    operations: list[DrawingOperation] = Field(default_factory=list)
     confidence: float = 0.0
     needs_confirmation: bool = False
     spoken_feedback: str = ""
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     source: PlanSource = PlanSource.RULE
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def __post_init__(self) -> None:
-        self.operations = [
-            operation if isinstance(operation, DrawingOperation) else DrawingOperation(**operation)
-            for operation in self.operations
-        ]
-        self.confidence = _clamp(float(self.confidence), 0.0, 1.0)
-        self.needs_confirmation = bool(self.needs_confirmation)
-        self.warnings = [str(item) for item in self.warnings]
-        self.source = _enum_value(PlanSource, self.source)
-        self.metadata = dict(self.metadata or {})
+    @field_validator("confidence")
+    @classmethod
+    def _clamp_confidence(cls, value: float) -> float:
+        """统一修正置信度范围，便于 API 响应稳定输出。"""
+        return _clamp(float(value), 0.0, 1.0)
+
+    @field_validator("warnings")
+    @classmethod
+    def _normalize_warnings(cls, value: list[Any]) -> list[str]:
+        """警告信息统一转成字符串。"""
+        return [str(item) for item in value]
+
+    @field_validator("metadata")
+    @classmethod
+    def _normalize_metadata(cls, value: dict[str, Any] | None) -> dict[str, Any]:
+        """确保 metadata 始终是可扩展字典。"""
+        return dict(value or {})

@@ -1,1 +1,1 @@
-"""Domain models for drawing commands."""
+"""语音绘图命令的领域模型。"""

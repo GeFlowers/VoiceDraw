@@ -12,7 +12,10 @@ from backend.domain.models import (
 
 
 class PlanValidator:
+    """绘图计划校验器，负责补齐默认值并过滤无法执行的动作。"""
+
     def validate(self, plan: CommandPlan) -> CommandPlan:
+        """逐条修复操作，确保返回给前端的计划至少包含一个动作。"""
         operations: list[DrawingOperation] = []
         warnings = list(plan.warnings)
 
@@ -23,6 +26,7 @@ class PlanValidator:
                 operations.append(repaired)
 
         if not operations:
+            # 所有动作都无效时保留一个 no_op，避免前端收到空计划。
             operations.append(
                 DrawingOperation(
                     type=OperationType.NO_OP,
@@ -40,6 +44,7 @@ class PlanValidator:
         )
 
     def _repair_operation(self, operation: DrawingOperation) -> tuple[DrawingOperation | None, list[str]]:
+        """修复单条操作；无法安全修复时返回 None 表示跳过。"""
         warnings: list[str] = []
         if operation.type in {OperationType.DRAW_SHAPE, OperationType.ADD_TEXT, OperationType.DRAW_PATH}:
             if operation.type == OperationType.DRAW_SHAPE and operation.shape is None:
@@ -51,9 +56,11 @@ class PlanValidator:
                     return None, warnings
             else:
                 operation = self._ensure_geometry(operation, warnings)
+            # 绘制类动作必须带样式，没有就使用默认描边。
             operation = self._ensure_style(operation)
 
         if operation.type in {OperationType.MOVE, OperationType.RESIZE, OperationType.ROTATE}:
+            # 变换类动作默认作用于当前选区。
             if operation.target is None:
                 operation = operation.model_copy(update={"target": "selected"})
 
@@ -63,11 +70,13 @@ class PlanValidator:
         return operation, warnings
 
     def _ensure_style(self, operation: DrawingOperation) -> DrawingOperation:
+        """补齐默认绘图样式。"""
         if operation.style is not None:
             return operation
         return operation.model_copy(update={"style": DrawingStyle()})
 
     def _ensure_geometry(self, operation: DrawingOperation, warnings: list[str]) -> DrawingOperation:
+        """为缺少 geometry 的基础图形补默认位置和尺寸。"""
         if operation.geometry is not None:
             return operation
 
@@ -83,6 +92,7 @@ class PlanValidator:
         return operation.model_copy(update={"geometry": geometry})
 
     def _ensure_path(self, operation: DrawingOperation, warnings: list[str]) -> DrawingOperation | None:
+        """为缺少 path 的 draw_path 生成一个基于 geometry 的默认闭合曲线。"""
         if operation.path:
             return operation
 

@@ -22,6 +22,7 @@ from backend.services.text_normalizer import (
 )
 
 
+# 位置词到归一化画布坐标的映射，供图形、文字和线段端点复用。
 ANCHORS: dict[str, tuple[float, float]] = {
     "左上角": (0.2, 0.22),
     "右上角": (0.8, 0.22),
@@ -42,6 +43,7 @@ ANCHORS: dict[str, tuple[float, float]] = {
     "中心": (0.5, 0.5),
 }
 
+# 形状关键词按更具体的词优先排列，减少“心形”被误判成普通“形”的风险。
 SHAPE_KEYWORDS: list[tuple[ShapeType, tuple[str, ...]]] = [
     (ShapeType.LIGHTNING, ("闪电", "雷电", "电光")),
     (ShapeType.FLOWER, ("花朵", "小花", "花")),
@@ -67,20 +69,21 @@ SHAPE_KEYWORDS: list[tuple[ShapeType, tuple[str, ...]]] = [
 
 @dataclass
 class SegmentResult:
+    """单个命令片段的解析结果。"""
+
     operations: list[DrawingOperation] = field(default_factory=list)
     confidence: float = 0.0
     warnings: list[str] = field(default_factory=list)
 
 
 class RuleBasedParser:
-    """Fast local parser for common drawing commands.
+    """常见绘图命令的本地快速解析器。
 
-    The parser intentionally favors deterministic behavior for latency-sensitive
-    voice commands. The LangGraph layer decides when to ask an LLM for repair or
-    decomposition.
+    规则解析优先保证低延迟和确定性；复杂语义由上层 LLM 规划器处理。
     """
 
     def parse(self, request: CommandRequest) -> CommandPlan:
+        """解析完整语音请求，并把复合命令合并成一个绘图计划。"""
         normalized = normalize_text(request.transcript)
         segments = split_compound_commands(normalized)
         results = [self._parse_segment(segment, request) for segment in segments]
@@ -89,6 +92,7 @@ class RuleBasedParser:
         warnings: list[str] = []
         confidences: list[float] = []
         for result in results:
+            # 有效动作和诊断信息分开累加，置信度只统计命中的片段。
             operations.extend(result.operations)
             warnings.extend(result.warnings)
             if result.operations:
@@ -118,6 +122,8 @@ class RuleBasedParser:
         )
 
     def _parse_segment(self, segment: str, request: CommandRequest) -> SegmentResult:
+        """按命令类型优先级解析单个片段。"""
+        # 全局命令优先处理，避免“清空画布”等被误判为普通绘图动作。
         if self._contains_any(segment, ("撤销", "后退一步", "退回一步")):
             return self._single(OperationType.UNDO, "撤销上一步", 0.98)
 
@@ -151,6 +157,7 @@ class RuleBasedParser:
         if self._contains_any(segment, ("旋转", "转动", "顺时针", "逆时针")):
             return self._parse_rotate(segment, request)
 
+        # 文本、预设组合图形和基础形状从具体到宽泛依次尝试。
         text_result = self._parse_text(segment)
         if text_result.operations:
             return text_result
@@ -166,6 +173,7 @@ class RuleBasedParser:
         return SegmentResult(warnings=[f"未识别片段: {segment}"])
 
     def _parse_background(self, segment: str) -> SegmentResult:
+        """解析背景色设置命令。"""
         color = extract_color(segment)
         if "透明" in segment:
             color = "transparent"
@@ -182,6 +190,7 @@ class RuleBasedParser:
         )
 
     def _parse_style_update(self, segment: str, request: CommandRequest) -> SegmentResult:
+        """解析对选中或最近对象的样式更新。"""
         style = build_style(segment)
         target = self._detect_target(segment, request)
         return SegmentResult(
@@ -197,6 +206,7 @@ class RuleBasedParser:
         )
 
     def _parse_select(self, segment: str, request: CommandRequest) -> SegmentResult:
+        """解析选择对象命令。"""
         target = self._detect_target(segment, request, default="last")
         return SegmentResult(
             operations=[
@@ -210,6 +220,7 @@ class RuleBasedParser:
         )
 
     def _parse_delete(self, segment: str, request: CommandRequest) -> SegmentResult:
+        """解析删除对象命令。"""
         target = self._detect_target(segment, request)
         return SegmentResult(
             operations=[
@@ -223,6 +234,7 @@ class RuleBasedParser:
         )
 
     def _parse_move(self, segment: str, request: CommandRequest) -> SegmentResult:
+        """解析移动方向和移动距离。"""
         dx, dy = 0.0, 0.0
         distance = self._movement_distance(segment, request)
         if self._contains_any(segment, ("左", "向左", "往左")):
@@ -249,6 +261,7 @@ class RuleBasedParser:
         )
 
     def _parse_resize(self, segment: str, request: CommandRequest) -> SegmentResult:
+        """解析缩放命令，百分比优先，其次使用默认缩放比例。"""
         number = extract_first_number(segment)
         if number and number > 2:
             amount = 1 + number / 100 if self._contains_any(segment, ("放大", "变大")) else 1 - number / 100
@@ -268,6 +281,7 @@ class RuleBasedParser:
         )
 
     def _parse_rotate(self, segment: str, request: CommandRequest) -> SegmentResult:
+        """解析旋转角度，未指定时默认 15 度。"""
         amount = extract_first_number(segment) or 15.0
         if "逆时针" in segment:
             amount = -amount
@@ -284,6 +298,7 @@ class RuleBasedParser:
         )
 
     def _parse_text(self, segment: str) -> SegmentResult:
+        """解析添加文字命令，并尝试提取文字内容、位置和样式。"""
         if not self._contains_any(segment, ("写", "文字", "标题", "标注", "标签")):
             return SegmentResult()
 
@@ -311,6 +326,7 @@ class RuleBasedParser:
         )
 
     def _parse_presets(self, segment: str) -> SegmentResult:
+        """解析由多个基础形状组成的预设物体。"""
         operations: list[DrawingOperation] = []
         if "太阳" in segment:
             operations.extend(self._preset_sun(segment))
@@ -328,6 +344,7 @@ class RuleBasedParser:
         return SegmentResult(operations=operations, confidence=0.76)
 
     def _parse_shape(self, segment: str) -> SegmentResult:
+        """解析单个基础形状绘制命令。"""
         shape = self._detect_shape(segment)
         if shape is None:
             return SegmentResult()
@@ -348,6 +365,7 @@ class RuleBasedParser:
         )
 
     def _preset_sun(self, segment: str) -> list[DrawingOperation]:
+        """用一个圆和多条短线组合太阳。"""
         x, y = self._anchor_for(segment, default=(0.78, 0.22))
         color = extract_color(segment) or "#facc15"
         style = build_style(segment, default_color=color, prefer_fill=True)
@@ -378,6 +396,7 @@ class RuleBasedParser:
         return ops
 
     def _preset_house(self, segment: str) -> list[DrawingOperation]:
+        """用墙体、屋顶和门组合房子。"""
         x, y = self._anchor_for(segment, default=(0.38, 0.58))
         wall_style = build_style(segment, default_color=extract_color(segment) or "#f97316", prefer_fill=True)
         roof_style = build_style("红色 填充", default_color="#ef4444", prefer_fill=True)
@@ -407,6 +426,7 @@ class RuleBasedParser:
         ]
 
     def _preset_tree(self, segment: str) -> list[DrawingOperation]:
+        """用树干和树冠组合树。"""
         x, y = self._anchor_for(segment, default=(0.68, 0.62))
         trunk_style = build_style("棕色 填充", default_color="#92400e", prefer_fill=True)
         leaf_style = build_style(segment, default_color="#22c55e", prefer_fill=True)
@@ -428,6 +448,7 @@ class RuleBasedParser:
         ]
 
     def _preset_cloud(self, segment: str) -> list[DrawingOperation]:
+        """用多个椭圆叠加成云朵。"""
         x, y = self._anchor_for(segment, default=(0.28, 0.24))
         style = build_style(segment, default_color="#94a3b8", prefer_fill=True)
         return [
@@ -455,6 +476,7 @@ class RuleBasedParser:
         ]
 
     def _preset_mountains(self, segment: str) -> list[DrawingOperation]:
+        """用两个三角形组合群山。"""
         x, y = self._anchor_for(segment, default=(0.5, 0.72))
         style = build_style(segment, default_color="#64748b", prefer_fill=True)
         return [
@@ -475,6 +497,7 @@ class RuleBasedParser:
         ]
 
     def _geometry_for_shape(self, segment: str, shape: ShapeType) -> Geometry:
+        """根据形状类型、位置词和大小词生成默认 geometry。"""
         if shape in {ShapeType.LINE, ShapeType.ARROW}:
             return self._line_geometry(segment)
 
@@ -505,6 +528,7 @@ class RuleBasedParser:
         return Geometry(x=x, y=y, width=0.26 * scale, height=0.18 * scale)
 
     def _line_geometry(self, segment: str) -> Geometry:
+        """解析线段/箭头端点，支持两个位置词组成起止点。"""
         anchor_names = sorted(ANCHORS, key=len, reverse=True)
         spans: list[tuple[int, int]] = []
         matches: list[tuple[int, str, tuple[float, float]]] = []
@@ -513,6 +537,7 @@ class RuleBasedParser:
                 span = match.span()
                 if any(span[0] < existing[1] and span[1] > existing[0] for existing in spans):
                     continue
+                # 已占用 span 用来避免“左上角”同时匹配“左上”。
                 spans.append(span)
                 matches.append((span[0], name, ANCHORS[name]))
         matches.sort(key=lambda item: item[0])
@@ -527,18 +552,21 @@ class RuleBasedParser:
         return Geometry(x=0.22, y=0.5, x2=0.78, y2=0.5)
 
     def _detect_shape(self, segment: str) -> ShapeType | None:
+        """从关键词表中识别形状类型。"""
         for shape, keywords in SHAPE_KEYWORDS:
             if self._contains_any(segment, keywords):
                 return shape
         return None
 
     def _anchor_for(self, segment: str, default: tuple[float, float]) -> tuple[float, float]:
+        """从位置词中提取锚点坐标，未命中时使用默认位置。"""
         for name in sorted(ANCHORS, key=len, reverse=True):
             if name in segment:
                 return ANCHORS[name]
         return default
 
     def _size_scale(self, segment: str) -> float:
+        """根据大小描述推断形状缩放系数。"""
         number = extract_first_number(segment)
         if number and "倍" in segment:
             return max(0.4, min(3.0, number))
@@ -549,6 +577,7 @@ class RuleBasedParser:
         return 1.0
 
     def _movement_distance(self, segment: str, request: CommandRequest) -> float:
+        """把口语化距离或像素距离转换成归一化画布偏移。"""
         if "一点" in segment or "一下" in segment:
             return 0.04
         number = extract_first_number(segment)
@@ -565,6 +594,7 @@ class RuleBasedParser:
         request: CommandRequest,
         default: str | None = None,
     ) -> str:
+        """解析命令作用目标，默认落到选区或最近对象。"""
         if self._contains_any(segment, ("全部", "所有", "全选")):
             return "all"
         if self._contains_any(segment, ("最后", "刚才", "上一个")):
@@ -576,6 +606,7 @@ class RuleBasedParser:
         return "selected" if request.selected_ids else "last"
 
     def _extract_text(self, segment: str) -> str:
+        """提取引号中的文字，或从“写/标题/标签”等标记后截取内容。"""
         quoted = re.search(r"[\"'“”‘’](.*?)[\"'“”‘’]", segment)
         if quoted and quoted.group(1).strip():
             return quoted.group(1).strip()
@@ -589,6 +620,7 @@ class RuleBasedParser:
         return text.strip(" 。")
 
     def _shape_prefers_fill(self, segment: str, shape: ShapeType) -> bool:
+        """判断图形是否默认更适合填充。"""
         if shape in {ShapeType.LINE, ShapeType.ARROW}:
             return False
         if shape in {
@@ -610,17 +642,20 @@ class RuleBasedParser:
         return self._contains_any(segment, ("实心", "填充", "色块"))
 
     def _looks_like_move(self, segment: str) -> bool:
+        """识别移动命令，同时排除“画一条线向右”这类绘图语句。"""
         return (
             self._contains_any(segment, ("移动", "挪", "移到", "移向", "往", "向"))
             and not self._contains_any(segment, ("画", "直线", "线段", "箭头"))
         )
 
     def _looks_like_style_update(self, segment: str) -> bool:
+        """识别单纯改样式的命令，避免和新建图形命令混淆。"""
         has_color = extract_color(segment) is not None or "透明" in segment
         has_action = self._contains_any(segment, ("改成", "改为", "变成", "颜色", "线宽", "粗细", "填充"))
         return has_color and has_action and "背景" not in segment and not self._contains_any(segment, ("画", "添加", "写"))
 
     def _feedback_for_operations(self, operations: list[DrawingOperation]) -> str:
+        """根据动作数量和位置生成简短中文反馈。"""
         if len(operations) == 1:
             op = operations[0]
             if op.type == OperationType.NO_OP:
@@ -634,6 +669,7 @@ class RuleBasedParser:
         return f"已拆解并执行 {len(operations)} 个动作。"
 
     def _position_feedback(self, operation: DrawingOperation) -> str:
+        """把 geometry 坐标转换成用户容易理解的位置短语。"""
         geometry = operation.geometry
         if geometry is None:
             return ""
@@ -643,6 +679,7 @@ class RuleBasedParser:
 
     @staticmethod
     def _position_name(x: float, y: float) -> str:
+        """根据归一化坐标推断九宫格式位置名称。"""
         horizontal = "中间"
         vertical = "中间"
         if x < 0.34:
@@ -669,6 +706,7 @@ class RuleBasedParser:
         *,
         value: str | None = None,
     ) -> SegmentResult:
+        """构造只包含一个无 geometry 操作的结果。"""
         return SegmentResult(
             operations=[
                 DrawingOperation(
@@ -682,4 +720,5 @@ class RuleBasedParser:
 
     @staticmethod
     def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+        """判断文本是否包含任一关键词。"""
         return any(keyword in text for keyword in keywords)

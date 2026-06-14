@@ -1,1 +1,1 @@
-"""Services used by the command interpreter."""
+"""命令解释器使用的解析、校验和辅助服务。"""

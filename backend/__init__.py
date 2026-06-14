@@ -1,1 +1,1 @@
-"""Application package for Voice Draw."""
+"""Voice Draw 后端应用包。"""
