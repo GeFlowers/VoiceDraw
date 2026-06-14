@@ -2,6 +2,8 @@
 
 ## 0. DEMO视频链接
 
+链接:https://pan.baidu.com/s/1-QnkDQ7S99OCEF3jAYGThw?pwd=jh9y 提取码:jh9y 复制这段内容后打开百度网盘手机App，操作更方便哦。
+
 ## 1. 项目简介
 
 VoiceDraw 是一个语音驱动的 AI 矢量绘图工具。用户通过中文语音描述想画什么或想怎样编辑画布，浏览器将语音识别结果提交给 FastAPI 后端，后端调用 OpenAI-compatible AI API 生成结构化绘图计划，前端再根据计划在 HTML Canvas 上绘制。
