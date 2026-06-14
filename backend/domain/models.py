@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 class OperationType(str, Enum):
     DRAW_SHAPE = "draw_shape"
+    DRAW_PATH = "draw_path"
     ADD_TEXT = "add_text"
     SET_STYLE = "set_style"
     SET_BACKGROUND = "set_background"
@@ -25,6 +26,7 @@ class OperationType(str, Enum):
 
 
 class ShapeType(str, Enum):
+    PATH = "path"
     LINE = "line"
     ARROW = "arrow"
     RECTANGLE = "rectangle"
@@ -137,6 +139,26 @@ class Geometry(ModelMixin):
 
 
 @dataclass
+class PathCommand(ModelMixin):
+    command: str
+    x: float | None = None
+    y: float | None = None
+    x1: float | None = None
+    y1: float | None = None
+    x2: float | None = None
+    y2: float | None = None
+
+    def __post_init__(self) -> None:
+        self.command = str(self.command).upper()
+        if self.command not in {"M", "L", "Q", "C", "Z"}:
+            raise ValueError("path command must be one of M, L, Q, C, Z")
+        for key in ("x", "y", "x1", "y1", "x2", "y2"):
+            value = getattr(self, key)
+            if value is not None:
+                setattr(self, key, _clamp(float(value), 0.0, 1.0))
+
+
+@dataclass
 class Vector(ModelMixin):
     dx: float = 0
     dy: float = 0
@@ -157,6 +179,7 @@ class DrawingOperation(ModelMixin):
     value: str | None = None
     amount: float | None = None
     delta: Vector | dict[str, Any] | None = None
+    path: list[PathCommand | dict[str, Any]] | None = None
     group_id: str | None = None
     description: str = ""
 
@@ -169,6 +192,8 @@ class DrawingOperation(ModelMixin):
             self.geometry = Geometry(**self.geometry)
         if isinstance(self.delta, dict):
             self.delta = Vector(**self.delta)
+        if self.path is not None:
+            self.path = [item if isinstance(item, PathCommand) else PathCommand(**item) for item in self.path]
 
 
 @dataclass
@@ -211,6 +236,7 @@ class CommandPlan(ModelMixin):
     spoken_feedback: str = ""
     warnings: list[str] = field(default_factory=list)
     source: PlanSource = PlanSource.RULE
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.operations = [
@@ -221,3 +247,4 @@ class CommandPlan(ModelMixin):
         self.needs_confirmation = bool(self.needs_confirmation)
         self.warnings = [str(item) for item in self.warnings]
         self.source = _enum_value(PlanSource, self.source)
+        self.metadata = dict(self.metadata or {})
