@@ -6,8 +6,6 @@ const transcriptText = document.querySelector("#transcriptText");
 const activityLog = document.querySelector("#activityLog");
 const objectCount = document.querySelector("#objectCount");
 const selectionCount = document.querySelector("#selectionCount");
-const testCommandForm = document.querySelector("#testCommandForm");
-const testCommandInput = document.querySelector("#testCommandInput");
 const aiStatusText = document.querySelector("#aiStatusText");
 const confidenceText = document.querySelector("#confidenceText");
 const latencyText = document.querySelector("#latencyText");
@@ -1012,23 +1010,6 @@ function setCanvasSizeFromOperation(operation) {
   updateMetrics();
 }
 
-function initTextTesting() {
-  testCommandForm?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const command = testCommandInput.value.trim();
-    if (!command) return;
-    testCommandInput.value = "";
-    await enqueueTranscript(command);
-  });
-
-  const params = new URLSearchParams(window.location.search);
-  const testCommand = params.get("test");
-  if (testCommand) {
-    testCommandInput.value = testCommand;
-    window.setTimeout(() => enqueueTranscript(testCommand), 250);
-  }
-}
-
 async function loadHealth() {
   try {
     const response = await fetch("/api/health");
@@ -1129,5 +1110,4 @@ document.addEventListener("visibilitychange", () => {
 resizeCanvas();
 updateMetrics();
 loadHealth();
-initTextTesting();
 initVoice();

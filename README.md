@@ -1,6 +1,6 @@
 # Voice Draw Studio
 
-Voice Draw Studio 是一个语音驱动的 AI 矢量绘图工具。用户可以通过中文语音或文字输入描述画面，后端会优先调用 OpenAI-compatible AI API，把自然语言转换为前端可执行的绘图计划，然后由浏览器 Canvas 渲染。
+VoiceDraw 是一个语音驱动的 AI 矢量绘图工具。用户可以通过中文语音描述画面，后端会调用 OpenAI-compatible AI API，把语音识别文本转换为前端可执行的绘图计划，然后由浏览器 Canvas 渲染。
 
 ## 当前架构
 

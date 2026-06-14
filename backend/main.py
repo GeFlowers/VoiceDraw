@@ -62,7 +62,7 @@ class VoiceDrawApp:
                 return
 
             if method == "POST" and path == "/api/commands/interpret":
-                # 语音文本解析入口：请求体转换成领域模型后交给解释器。
+                # 语音命令解析入口：请求体转换成领域模型后交给解释器。
                 payload = await self._read_json(receive)
                 request = CommandRequest.from_dict(payload)
                 plan = self.interpreter.interpret(request)
