@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VoiceDraw</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <span class="brand-mark" aria-hidden="true">VD</span>
+          <div>
+            <h1>VoiceDraw</h1>
+          </div>
+        </div>
+
+        <div class="system-strip" aria-live="polite">
+          <div class="status-pill">
+            <span>AI</span>
+            <strong id="aiStatusText">检测中</strong>
+          </div>
+          <div class="signal-card">
+            <div class="signal">
+              <span id="listenDot" class="dot"></span>
+              <span id="signalText">准备中</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="canvas-stage" aria-label="绘图画布">
+          <div class="canvas-bar">
+            <div>
+              <span>画布</span>
+              <strong id="canvasSizeText">--</strong>
+            </div>
+            <div class="canvas-stats">
+              <span>对象 <strong id="objectCount">0</strong></span>
+              <span>选中 <strong id="selectionCount">0</strong></span>
+            </div>
+          </div>
+          <canvas id="drawingCanvas"></canvas>
+        </section>
+
+        <aside class="activity-panel" aria-live="polite">
+          <section class="command-console">
+            <div class="panel-heading">
+              <span>语音输入</span>
+              <strong id="confidenceText">--</strong>
+            </div>
+            <div class="transcript-box">
+              <p id="transcriptText">等待输入</p>
+            </div>
+            <form id="testCommandForm" class="test-command-form">
+              <label for="testCommandInput">文字测试</label>
+              <div class="test-command-row">
+                <input
+                  id="testCommandInput"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="画一辆红色自行车，旁边写上 Demo"
+                />
+                <button type="submit">执行</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="telemetry-panel">
+            <div class="panel-heading">
+              <span>AI 调用</span>
+              <strong id="latencyText">--</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>模型</dt>
+                <dd id="modelText">--</dd>
+              </div>
+              <div>
+                <dt>操作数</dt>
+                <dd id="operationCountText">0</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="activity-feed">
+            <div class="panel-heading">
+              <span>历史</span>
+              <strong id="historyCountText">0</strong>
+            </div>
+            <ol id="activityLog" class="activity-log"></ol>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

@@ -1,6 +1,5 @@
 const canvas = document.querySelector("#drawingCanvas");
 const ctx = canvas.getContext("2d");
-const statusText = document.querySelector("#statusText");
 const signalText = document.querySelector("#signalText");
 const listenDot = document.querySelector("#listenDot");
 const transcriptText = document.querySelector("#transcriptText");
@@ -9,6 +8,17 @@ const objectCount = document.querySelector("#objectCount");
 const selectionCount = document.querySelector("#selectionCount");
 const testCommandForm = document.querySelector("#testCommandForm");
 const testCommandInput = document.querySelector("#testCommandInput");
+const aiStatusText = document.querySelector("#aiStatusText");
+const confidenceText = document.querySelector("#confidenceText");
+const latencyText = document.querySelector("#latencyText");
+const modelText = document.querySelector("#modelText");
+const operationCountText = document.querySelector("#operationCountText");
+const historyCountText = document.querySelector("#historyCountText");
+const canvasSizeText = document.querySelector("#canvasSizeText");
+
+const DEFAULT_CANVAS_SIZE = { width: 1280, height: 720 };
+const MIN_CANVAS_SIZE = 240;
+const MAX_CANVAS_SIZE = 4096;
 
 const state = {
   objects: [],
@@ -16,16 +26,19 @@ const state = {
   undoStack: [],
   redoStack: [],
   background: "#fffefa",
-  viewport: { width: 1, height: 1 },
+  canvasSize: { ...DEFAULT_CANVAS_SIZE },
+  viewport: { ...DEFAULT_CANVAS_SIZE },
   processing: false,
   queue: [],
 };
 
 const mutatingTypes = new Set([
   "draw_shape",
+  "draw_path",
   "add_text",
   "set_style",
   "set_background",
+  "set_canvas_size",
   "delete",
   "move",
   "resize",
@@ -45,28 +58,17 @@ function setStatus(kind, message) {
   if (kind) listenDot.classList.add(kind);
   document.body.dataset.state = kind || "idle";
   signalText.textContent = message;
-  statusText.textContent = message;
-}
-
-function speak(message) {
-  if (!message || !("speechSynthesis" in window)) return;
-  const utterance = new SpeechSynthesisUtterance(message);
-  utterance.lang = "zh-CN";
-  utterance.rate = 1.05;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
 }
 
 function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  state.viewport = {
-    width: Math.max(1, Math.floor(rect.width)),
-    height: Math.max(1, Math.floor(rect.height)),
-  };
+  state.viewport = { ...state.canvasSize };
+  canvas.style.setProperty("--canvas-width", String(state.canvasSize.width));
+  canvas.style.setProperty("--canvas-height", String(state.canvasSize.height));
   canvas.width = Math.floor(state.viewport.width * dpr);
   canvas.height = Math.floor(state.viewport.height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (canvasSizeText) canvasSizeText.textContent = `${state.viewport.width} x ${state.viewport.height}`;
   render();
 }
 
@@ -75,6 +77,7 @@ function snapshot() {
     objects: state.objects,
     selectedIds: state.selectedIds,
     background: state.background,
+    canvasSize: state.canvasSize,
   });
 }
 
@@ -83,6 +86,8 @@ function restore(serialized) {
   state.objects = parsed.objects || [];
   state.selectedIds = parsed.selectedIds || [];
   state.background = parsed.background || "#fffefa";
+  state.canvasSize = parsed.canvasSize || { ...DEFAULT_CANVAS_SIZE };
+  resizeCanvas();
 }
 
 function pushHistory() {
@@ -96,20 +101,23 @@ function applyPlan(plan, transcript) {
   const shouldSnapshot = operations.some((operation) => mutatingTypes.has(operation.type));
   if (shouldSnapshot) pushHistory();
 
-  const drawOperations = operations.filter((operation) => operation.type === "draw_shape" || operation.type === "add_text");
+  const drawOperations = operations.filter((operation) =>
+    ["draw_shape", "draw_path", "add_text"].includes(operation.type),
+  );
   const planGroupId = drawOperations.length ? `group_${Date.now()}_${Math.random().toString(16).slice(2)}` : null;
   for (const operation of operations) {
     applyOperation(operation, planGroupId);
   }
   render();
   updateMetrics();
-  addLog(transcript, plan.spoken_feedback || "指令已处理");
-  speak(plan.spoken_feedback || "指令已处理");
+  updatePlanTelemetry(plan);
+  addLog(transcript, plan.spoken_feedback || "指令已处理", plan);
 }
 
 function applyOperation(operation, planGroupId = null) {
   switch (operation.type) {
     case "draw_shape":
+    case "draw_path":
     case "add_text":
       addObject(operation, operation.group_id || planGroupId);
       break;
@@ -118,6 +126,9 @@ function applyOperation(operation, planGroupId = null) {
       break;
     case "set_background":
       state.background = operation.value || "#fffefa";
+      break;
+    case "set_canvas_size":
+      setCanvasSizeFromOperation(operation);
       break;
     case "select":
       selectTarget(operation.target);
@@ -159,14 +170,31 @@ function addObject(operation, groupId = null) {
   const object = {
     id,
     groupId: groupId || id,
-    type: operation.type === "add_text" ? "text" : operation.shape,
+    type: operation.type === "add_text" ? "text" : operation.type === "draw_path" ? "path" : operation.shape,
     text: operation.text || "",
     geometry: { ...(operation.geometry || {}) },
+    path: normalizePath(operation.path || []),
     style: normalizeStyle(operation.style || {}),
     rotation: 0,
   };
   state.objects.push(object);
   state.selectedIds = getGroupObjects(object.groupId).map((item) => item.id);
+}
+
+function normalizePath(path) {
+  if (!Array.isArray(path)) return [];
+  const commands = [];
+  for (const item of path) {
+    if (!item || typeof item !== "object") continue;
+    const command = String(item.command || "").toUpperCase();
+    if (!["M", "L", "Q", "C", "Z"].includes(command)) continue;
+    const normalized = { command };
+    for (const key of ["x", "y", "x1", "y1", "x2", "y2"]) {
+      if (typeof item[key] === "number") normalized[key] = clamp(item[key]);
+    }
+    commands.push(normalized);
+  }
+  return commands;
 }
 
 function normalizeStyle(style) {
@@ -227,13 +255,13 @@ function updateStyle(operation) {
 
 function moveTarget(target, delta) {
   for (const object of getTargets(target)) {
-    translateGeometry(object.geometry, delta.dx || 0, delta.dy || 0);
+    translateObject(object, delta.dx || 0, delta.dy || 0);
   }
 }
 
 function resizeTarget(target, amount) {
   for (const object of getTargets(target)) {
-    scaleGeometry(object.geometry, amount);
+    scaleObject(object, amount);
   }
 }
 
@@ -271,6 +299,24 @@ function translateGeometry(geometry, dx, dy) {
   }
 }
 
+function translateObject(object, dx, dy) {
+  translateGeometry(object.geometry || {}, dx, dy);
+  if (object.type === "path") {
+    translatePath(object.path || [], dx, dy);
+  }
+}
+
+function translatePath(path, dx, dy) {
+  for (const command of path) {
+    for (const key of ["x", "x1", "x2"]) {
+      if (typeof command[key] === "number") command[key] = clamp(command[key] + dx);
+    }
+    for (const key of ["y", "y1", "y2"]) {
+      if (typeof command[key] === "number") command[key] = clamp(command[key] + dy);
+    }
+  }
+}
+
 function scaleGeometry(geometry, amount) {
   for (const key of ["width", "height", "radius"]) {
     if (typeof geometry[key] === "number") geometry[key] = clamp(geometry[key] * amount, 0.01, 1);
@@ -284,6 +330,23 @@ function scaleGeometry(geometry, amount) {
     const cy = (geometry.y + geometry.y2) / 2;
     geometry.y = clamp(cy + (geometry.y - cy) * amount);
     geometry.y2 = clamp(cy + (geometry.y2 - cy) * amount);
+  }
+}
+
+function scaleObject(object, amount) {
+  scaleGeometry(object.geometry || {}, amount);
+  if (object.type !== "path") return;
+
+  const bounds = getPathBoundsNormalized(object.path || []);
+  const cx = bounds.x + bounds.width / 2;
+  const cy = bounds.y + bounds.height / 2;
+  for (const command of object.path || []) {
+    for (const key of ["x", "x1", "x2"]) {
+      if (typeof command[key] === "number") command[key] = clamp(cx + (command[key] - cx) * amount);
+    }
+    for (const key of ["y", "y1", "y2"]) {
+      if (typeof command[key] === "number") command[key] = clamp(cy + (command[key] - cy) * amount);
+    }
   }
 }
 
@@ -328,6 +391,9 @@ function drawObject(object) {
         break;
       case "arrow":
         drawLine(object.geometry, true);
+        break;
+      case "path":
+        drawPath(object.path || []);
         break;
       case "rectangle":
         drawRectangle(object.geometry);
@@ -412,6 +478,45 @@ function drawLine(geometry, withArrow) {
   ctx.lineTo(x2, y2);
   ctx.stroke();
   if (withArrow) drawArrowHead(x1, y1, x2, y2);
+}
+
+function drawPath(path) {
+  if (!Array.isArray(path) || !path.length) return;
+  ctx.beginPath();
+  for (const command of path) {
+    switch (command.command) {
+      case "M":
+        ctx.moveTo(px(command.x ?? 0.5), py(command.y ?? 0.5));
+        break;
+      case "L":
+        ctx.lineTo(px(command.x ?? 0.5), py(command.y ?? 0.5));
+        break;
+      case "Q":
+        ctx.quadraticCurveTo(
+          px(command.x1 ?? command.x ?? 0.5),
+          py(command.y1 ?? command.y ?? 0.5),
+          px(command.x ?? 0.5),
+          py(command.y ?? 0.5),
+        );
+        break;
+      case "C":
+        ctx.bezierCurveTo(
+          px(command.x1 ?? command.x ?? 0.5),
+          py(command.y1 ?? command.y ?? 0.5),
+          px(command.x2 ?? command.x ?? 0.5),
+          py(command.y2 ?? command.y ?? 0.5),
+          px(command.x ?? 0.5),
+          py(command.y ?? 0.5),
+        );
+        break;
+      case "Z":
+        ctx.closePath();
+        break;
+      default:
+        break;
+    }
+  }
+  fillAndStroke();
 }
 
 function drawArrowHead(x1, y1, x2, y2) {
@@ -714,6 +819,15 @@ function getGroupBounds(objects) {
 
 function getBounds(object) {
   const geometry = object.geometry || {};
+  if (object.type === "path") {
+    const bounds = getPathBoundsNormalized(object.path || []);
+    return {
+      x: px(bounds.x),
+      y: py(bounds.y),
+      width: Math.max(1, pw(bounds.width)),
+      height: Math.max(1, ph(bounds.height)),
+    };
+  }
   if (object.type === "line" || object.type === "arrow") {
     const x1 = px(geometry.x ?? 0.2);
     const y1 = py(geometry.y ?? 0.5);
@@ -733,6 +847,32 @@ function getBounds(object) {
     y: py(geometry.y ?? 0.5) - height / 2,
     width,
     height,
+  };
+}
+
+function getPathBoundsNormalized(path) {
+  const xs = [];
+  const ys = [];
+  for (const command of path) {
+    for (const key of ["x", "x1", "x2"]) {
+      if (typeof command[key] === "number") xs.push(command[key]);
+    }
+    for (const key of ["y", "y1", "y2"]) {
+      if (typeof command[key] === "number") ys.push(command[key]);
+    }
+  }
+  if (!xs.length || !ys.length) {
+    return { x: 0.45, y: 0.45, width: 0.1, height: 0.1 };
+  }
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  const right = Math.max(...xs);
+  const bottom = Math.max(...ys);
+  return {
+    x: left,
+    y: top,
+    width: Math.max(0.01, right - left),
+    height: Math.max(0.01, bottom - top),
   };
 }
 
@@ -765,17 +905,34 @@ function countGroups(objects) {
   return new Set(objects.map((object) => object.groupId || object.id)).size;
 }
 
-function addLog(transcript, feedback) {
+function updatePlanTelemetry(plan) {
+  const operations = Array.isArray(plan.operations) ? plan.operations : [];
+  const metadata = plan.metadata || {};
+  const confidence = typeof plan.confidence === "number" ? `${Math.round(plan.confidence * 100)}%` : "--";
+  confidenceText.textContent = confidence;
+  operationCountText.textContent = String(operations.length);
+  if (metadata.llm_latency_ms !== undefined) latencyText.textContent = `${metadata.llm_latency_ms} ms`;
+  if (metadata.llm_model) modelText.textContent = metadata.llm_model;
+}
+
+function addLog(transcript, feedback, plan = {}) {
   const item = document.createElement("li");
   const title = document.createElement("strong");
   title.textContent = transcript;
   const body = document.createElement("span");
   body.textContent = feedback;
-  item.append(title, body);
+  const meta = document.createElement("small");
+  const metadata = plan.metadata || {};
+  const details = [];
+  if (metadata.llm_latency_ms !== undefined) details.push(`${metadata.llm_latency_ms} ms`);
+  if (typeof plan.confidence === "number") details.push(`${Math.round(plan.confidence * 100)}%`);
+  meta.textContent = details.join(" · ");
+  item.append(title, body, meta);
   activityLog.prepend(item);
   while (activityLog.children.length > 20) {
     activityLog.removeChild(activityLog.lastChild);
   }
+  historyCountText.textContent = String(activityLog.children.length);
 }
 
 async function enqueueTranscript(transcript) {
@@ -806,14 +963,20 @@ async function processQueue() {
         }),
       });
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        let detail = `HTTP ${response.status}`;
+        try {
+          const errorBody = await response.json();
+          if (errorBody.detail) detail = errorBody.detail;
+        } catch {
+          // Keep the status-only message when the response is not JSON.
+        }
+        throw new Error(detail);
       }
       const plan = await response.json();
       applyPlan(plan, transcript);
     } catch (error) {
       const message = `指令处理失败: ${error.message}`;
       addLog(transcript, message);
-      speak(message);
       setStatus("error", "处理失败");
     }
   }
@@ -832,6 +995,23 @@ function getRecentGroupIds(limit) {
   return ids.reverse();
 }
 
+function parseCanvasSizeValue(value) {
+  const match = String(value || "").replace(/\s+/g, "").match(/^(\d{3,4})[xX×*乘](\d{3,4})$/);
+  if (!match) return null;
+  return {
+    width: Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Number(match[1]))),
+    height: Math.max(MIN_CANVAS_SIZE, Math.min(MAX_CANVAS_SIZE, Number(match[2]))),
+  };
+}
+
+function setCanvasSizeFromOperation(operation) {
+  const size = parseCanvasSizeValue(operation.value);
+  if (!size) return;
+  state.canvasSize = size;
+  resizeCanvas();
+  updateMetrics();
+}
+
 function initTextTesting() {
   testCommandForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -846,6 +1026,18 @@ function initTextTesting() {
   if (testCommand) {
     testCommandInput.value = testCommand;
     window.setTimeout(() => enqueueTranscript(testCommand), 250);
+  }
+}
+
+async function loadHealth() {
+  try {
+    const response = await fetch("/api/health");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const health = await response.json();
+    aiStatusText.textContent = health.llm_ready ? "已连接" : "未配置";
+    modelText.textContent = health.llm_model || "--";
+  } catch {
+    aiStatusText.textContent = "离线";
   }
 }
 
@@ -936,5 +1128,6 @@ document.addEventListener("visibilitychange", () => {
 
 resizeCanvas();
 updateMetrics();
+loadHealth();
 initTextTesting();
 initVoice();
