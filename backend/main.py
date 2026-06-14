@@ -51,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "env": resolved_settings.app_env,
             "llm_ready": interpreter.llm_parser.is_configured,
             "llm_model": resolved_settings.llm_model,
+            "llm_model_chain": list(resolved_settings.llm_model_chain),
             "planner_mode": "ai_enum_vector_planner",
         }
 

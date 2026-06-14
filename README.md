@@ -102,7 +102,9 @@ Copy-Item .env.example .env
 APP_ENV=development
 LLM_BASE_URL=https://your-provider.example/v1
 LLM_API_KEY=your-api-key
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=gpt-5.5
+LLM_FALLBACK_MODELS=gpt-5.4,gpt-5.4-mini,gpt-5.4-nano
+LLM_MAX_RETRIES=1
 ENABLE_LLM=true
 LLM_TIMEOUT_SECONDS=8
 ```
@@ -112,6 +114,8 @@ LLM_TIMEOUT_SECONDS=8
 ```text
 https://api.openai.com/v1
 ```
+
+`LLM_MODEL` 是优先使用的模型，`LLM_FALLBACK_MODELS` 是从高到低的备用模型列表。默认示例顺序为 `gpt-5.5`、`gpt-5.4`、`gpt-5.4-mini`、`gpt-5.4-nano`。`LLM_MAX_RETRIES=1` 表示每个模型失败后额外重试 1 次，再切换到下一个模型。
 
 ## 7. 启动项目
 
@@ -142,7 +146,8 @@ GET /api/health
   "status": "ok",
   "env": "development",
   "llm_ready": true,
-  "llm_model": "gpt-4o-mini",
+  "llm_model": "gpt-5.5",
+  "llm_model_chain": ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"],
   "planner_mode": "ai_enum_vector_planner"
 }
 ```
@@ -173,11 +178,12 @@ POST /api/commands/interpret
 当 AI API 被调用时，uvicorn 日志会出现：
 
 ```text
-[voice-draw] ai_api_call_started model=gpt-4o-mini endpoint=https://.../v1/chat/completions
-[voice-draw] ai_api_call_completed latency_ms=2140
+[voice-draw] ai_api_call_started model=gpt-5.5 attempt=1/2 endpoint=https://.../v1/chat/completions
+[voice-draw] ai_api_call_failed gpt-5.5 attempt 1/2: ...
+[voice-draw] ai_api_call_completed model=gpt-5.4 attempts=3 latency_ms=2140
 ```
 
-如果 AI 未配置或调用失败，后端会返回错误。
+如果某个模型调用失败，后端会先重试，再按备用模型顺序降级。所有模型都失败时，后端会返回错误。
 
 ## 10. 当前限制
 

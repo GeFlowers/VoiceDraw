@@ -30,6 +30,13 @@ def _as_bool(value: str | bool | None, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _split_csv(value: str | None) -> tuple[str, ...]:
+    """把逗号分隔的环境变量转换成去空白后的字符串元组。"""
+    if not value:
+        return ()
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     """后端运行配置，优先来自环境变量，其次来自 .env 文件。"""
@@ -37,7 +44,9 @@ class Settings:
     app_env: str = "development"
     llm_base_url: str = ""
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "gpt-5.5"
+    llm_fallback_models: tuple[str, ...] = ()
+    llm_max_retries: int = 1
     enable_llm: bool = True
     llm_timeout_seconds: int = 8
 
@@ -45,6 +54,16 @@ class Settings:
     def llm_ready(self) -> bool:
         """只有显式启用且 API 地址、密钥都存在时才允许调用 LLM。"""
         return self.enable_llm and bool(self.llm_base_url.strip()) and bool(self.llm_api_key.strip())
+
+    @property
+    def llm_model_chain(self) -> tuple[str, ...]:
+        """返回主模型加备用模型组成的降级顺序，并保持去重。"""
+        models: list[str] = []
+        for model in (self.llm_model, *self.llm_fallback_models):
+            model = model.strip()
+            if model and model not in models:
+                models.append(model)
+        return tuple(models)
 
 
 @lru_cache
@@ -60,7 +79,9 @@ def get_settings() -> Settings:
         app_env=get("APP_ENV", "development"),
         llm_base_url=get("LLM_BASE_URL", ""),
         llm_api_key=get("LLM_API_KEY", ""),
-        llm_model=get("LLM_MODEL", "gpt-4o-mini"),
+        llm_model=get("LLM_MODEL", "gpt-5.5"),
+        llm_fallback_models=_split_csv(get("LLM_FALLBACK_MODELS", "")),
+        llm_max_retries=max(0, int(get("LLM_MAX_RETRIES", "1"))),
         enable_llm=_as_bool(get("ENABLE_LLM", "true"), True),
         llm_timeout_seconds=int(get("LLM_TIMEOUT_SECONDS", "8")),
     )
